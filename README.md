@@ -55,7 +55,7 @@ export RUNWAYML_API_SECRET=your_secret_here
 
 3. Run a safe organization smoke test.
 
-```bash
+```rust
 use runway_sdk::RunwayClient;
 
 #[tokio::main]
