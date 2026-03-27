@@ -20,6 +20,8 @@ pub struct ImageToVideoRequest {
     pub seed: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub content_moderation: Option<ContentModeration>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub webhook_url: Option<String>,
 }
 
 impl ImageToVideoRequest {
@@ -32,6 +34,7 @@ impl ImageToVideoRequest {
             duration: None,
             seed: None,
             content_moderation: None,
+            webhook_url: None,
         }
     }
 
@@ -52,6 +55,11 @@ impl ImageToVideoRequest {
 
     pub fn content_moderation(mut self, cm: ContentModeration) -> Self {
         self.content_moderation = Some(cm);
+        self
+    }
+
+    pub fn webhook_url(mut self, url: impl Into<String>) -> Self {
+        self.webhook_url = Some(url.into());
         self
     }
 }
@@ -71,6 +79,8 @@ pub struct TextToVideoRequest {
     pub seed: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub content_moderation: Option<ContentModeration>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub webhook_url: Option<String>,
 }
 
 impl TextToVideoRequest {
@@ -82,6 +92,7 @@ impl TextToVideoRequest {
             duration: None,
             seed: None,
             content_moderation: None,
+            webhook_url: None,
         }
     }
 
@@ -102,6 +113,11 @@ impl TextToVideoRequest {
 
     pub fn content_moderation(mut self, cm: ContentModeration) -> Self {
         self.content_moderation = Some(cm);
+        self
+    }
+
+    pub fn webhook_url(mut self, url: impl Into<String>) -> Self {
+        self.webhook_url = Some(url.into());
         self
     }
 }
@@ -122,6 +138,8 @@ pub struct VideoToVideoRequest {
     pub seed: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub content_moderation: Option<ContentModeration>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub webhook_url: Option<String>,
 }
 
 impl VideoToVideoRequest {
@@ -134,6 +152,7 @@ impl VideoToVideoRequest {
             duration: None,
             seed: None,
             content_moderation: None,
+            webhook_url: None,
         }
     }
 
@@ -156,6 +175,11 @@ impl VideoToVideoRequest {
         self.content_moderation = Some(cm);
         self
     }
+
+    pub fn webhook_url(mut self, url: impl Into<String>) -> Self {
+        self.webhook_url = Some(url.into());
+        self
+    }
 }
 
 // ── Text to Image ───────────────────────────────────────────────────────────
@@ -171,6 +195,8 @@ pub struct TextToImageRequest {
     pub seed: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub content_moderation: Option<ContentModeration>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub webhook_url: Option<String>,
 }
 
 impl TextToImageRequest {
@@ -181,6 +207,7 @@ impl TextToImageRequest {
             ratio: None,
             seed: None,
             content_moderation: None,
+            webhook_url: None,
         }
     }
 
@@ -191,6 +218,11 @@ impl TextToImageRequest {
 
     pub fn seed(mut self, seed: u32) -> Self {
         self.seed = Some(seed);
+        self
+    }
+
+    pub fn webhook_url(mut self, url: impl Into<String>) -> Self {
+        self.webhook_url = Some(url.into());
         self
     }
 }
@@ -210,6 +242,8 @@ pub struct CharacterPerformanceRequest {
     pub duration: Option<u8>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub seed: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub webhook_url: Option<String>,
 }
 
 impl CharacterPerformanceRequest {
@@ -227,6 +261,7 @@ impl CharacterPerformanceRequest {
             ratio: None,
             duration: None,
             seed: None,
+            webhook_url: None,
         }
     }
 
@@ -244,6 +279,11 @@ impl CharacterPerformanceRequest {
         self.seed = Some(seed);
         self
     }
+
+    pub fn webhook_url(mut self, url: impl Into<String>) -> Self {
+        self.webhook_url = Some(url.into());
+        self
+    }
 }
 
 // ── Sound Effect ────────────────────────────────────────────────────────────
@@ -256,6 +296,8 @@ pub struct SoundEffectRequest {
     pub duration: Option<u8>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub seed: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub webhook_url: Option<String>,
 }
 
 impl SoundEffectRequest {
@@ -264,6 +306,7 @@ impl SoundEffectRequest {
             prompt_text: prompt.into(),
             duration: None,
             seed: None,
+            webhook_url: None,
         }
     }
 
@@ -274,6 +317,11 @@ impl SoundEffectRequest {
 
     pub fn seed(mut self, seed: u32) -> Self {
         self.seed = Some(seed);
+        self
+    }
+
+    pub fn webhook_url(mut self, url: impl Into<String>) -> Self {
+        self.webhook_url = Some(url.into());
         self
     }
 }
@@ -288,6 +336,8 @@ pub struct SpeechToSpeechRequest {
     pub voice_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub seed: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub webhook_url: Option<String>,
 }
 
 impl SpeechToSpeechRequest {
@@ -296,6 +346,7 @@ impl SpeechToSpeechRequest {
             audio,
             voice_id: None,
             seed: None,
+            webhook_url: None,
         }
     }
 
@@ -306,6 +357,11 @@ impl SpeechToSpeechRequest {
 
     pub fn seed(mut self, seed: u32) -> Self {
         self.seed = Some(seed);
+        self
+    }
+
+    pub fn webhook_url(mut self, url: impl Into<String>) -> Self {
+        self.webhook_url = Some(url.into());
         self
     }
 }
@@ -320,6 +376,8 @@ pub struct TextToSpeechRequest {
     pub voice_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub seed: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub webhook_url: Option<String>,
 }
 
 impl TextToSpeechRequest {
@@ -328,6 +386,7 @@ impl TextToSpeechRequest {
             prompt_text: prompt.into(),
             voice_id: None,
             seed: None,
+            webhook_url: None,
         }
     }
 
@@ -338,6 +397,11 @@ impl TextToSpeechRequest {
 
     pub fn seed(mut self, seed: u32) -> Self {
         self.seed = Some(seed);
+        self
+    }
+
+    pub fn webhook_url(mut self, url: impl Into<String>) -> Self {
+        self.webhook_url = Some(url.into());
         self
     }
 }
@@ -352,6 +416,8 @@ pub struct VoiceDubbingRequest {
     pub target_language: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub seed: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub webhook_url: Option<String>,
 }
 
 impl VoiceDubbingRequest {
@@ -360,6 +426,7 @@ impl VoiceDubbingRequest {
             audio,
             target_language: None,
             seed: None,
+            webhook_url: None,
         }
     }
 
@@ -372,6 +439,11 @@ impl VoiceDubbingRequest {
         self.seed = Some(seed);
         self
     }
+
+    pub fn webhook_url(mut self, url: impl Into<String>) -> Self {
+        self.webhook_url = Some(url.into());
+        self
+    }
 }
 
 // ── Voice Isolation ─────────────────────────────────────────────────────────
@@ -382,15 +454,26 @@ pub struct VoiceIsolationRequest {
     pub audio: MediaInput,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub seed: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub webhook_url: Option<String>,
 }
 
 impl VoiceIsolationRequest {
     pub fn new(audio: MediaInput) -> Self {
-        Self { audio, seed: None }
+        Self {
+            audio,
+            seed: None,
+            webhook_url: None,
+        }
     }
 
     pub fn seed(mut self, seed: u32) -> Self {
         self.seed = Some(seed);
+        self
+    }
+
+    pub fn webhook_url(mut self, url: impl Into<String>) -> Self {
+        self.webhook_url = Some(url.into());
         self
     }
 }
@@ -409,6 +492,8 @@ pub struct LipSyncRequest {
     pub seed: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub content_moderation: Option<ContentModeration>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub webhook_url: Option<String>,
 }
 
 impl LipSyncRequest {
@@ -420,6 +505,7 @@ impl LipSyncRequest {
             max_duration: None,
             seed: None,
             content_moderation: None,
+            webhook_url: None,
         }
     }
 
@@ -437,6 +523,11 @@ impl LipSyncRequest {
         self.content_moderation = Some(cm);
         self
     }
+
+    pub fn webhook_url(mut self, url: impl Into<String>) -> Self {
+        self.webhook_url = Some(url.into());
+        self
+    }
 }
 
 // ── Image Upscale ──────────────────────────────────────────────────────────
@@ -452,6 +543,8 @@ pub struct ImageUpscaleRequest {
     pub seed: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub content_moderation: Option<ContentModeration>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub webhook_url: Option<String>,
 }
 
 impl ImageUpscaleRequest {
@@ -462,6 +555,7 @@ impl ImageUpscaleRequest {
             resolution: None,
             seed: None,
             content_moderation: None,
+            webhook_url: None,
         }
     }
 
@@ -479,6 +573,11 @@ impl ImageUpscaleRequest {
         self.content_moderation = Some(cm);
         self
     }
+
+    pub fn webhook_url(mut self, url: impl Into<String>) -> Self {
+        self.webhook_url = Some(url.into());
+        self
+    }
 }
 
 // ── Upload ──────────────────────────────────────────────────────────────────
@@ -489,7 +588,7 @@ pub struct CreateUploadRequest {
     pub filename: String,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateUploadResponse {
     pub id: String,

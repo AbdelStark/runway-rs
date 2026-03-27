@@ -40,4 +40,16 @@ impl TasksResource {
     pub async fn delete(&self, id: Uuid) -> Result<(), RunwayError> {
         self.client.delete(&format!("/v1/tasks/{}", id)).await
     }
+
+    /// Cancel a running task. Unlike delete, cancel stops an in-progress task
+    /// without removing it from the task list.
+    pub async fn cancel(&self, id: Uuid) -> Result<(), RunwayError> {
+        self.client
+            .post::<serde_json::Value, serde_json::Value>(
+                &format!("/v1/tasks/{}/cancel", id),
+                &serde_json::json!({}),
+            )
+            .await?;
+        Ok(())
+    }
 }

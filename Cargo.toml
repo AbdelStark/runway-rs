@@ -97,3 +97,19 @@ path = "examples/documents.rs"
 [[example]]
 name = "organization"
 path = "examples/organization.rs"
+
+[[example]]
+name = "speech_to_speech"
+path = "examples/speech_to_speech.rs"
+
+[[example]]
+name = "realtime_sessions"
+path = "examples/realtime_sessions.rs"
+
+[[example]]
+name = "uploads"
+path = "examples/uploads.rs"
+
+[[example]]
+name = "webhook"
+path = "examples/webhook.rs"

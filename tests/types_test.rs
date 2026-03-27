@@ -567,3 +567,178 @@ fn test_config_builder() {
     assert_eq!(config.poll_interval, Duration::from_secs(10));
     assert_eq!(config.max_poll_duration, Duration::from_secs(300));
 }
+
+// ── Webhook URL serialization tests ─────────────────────────────────────
+
+#[test]
+fn test_text_to_video_webhook_url() {
+    let req = TextToVideoRequest::new(VideoModel::Gen45, "test prompt")
+        .webhook_url("https://example.com/webhook");
+    let json = serde_json::to_value(&req).unwrap();
+    assert_eq!(json["webhookUrl"], "https://example.com/webhook");
+}
+
+#[test]
+fn test_text_to_video_no_webhook_url() {
+    let req = TextToVideoRequest::new(VideoModel::Gen45, "test prompt");
+    let json = serde_json::to_value(&req).unwrap();
+    assert!(json.get("webhookUrl").is_none());
+}
+
+#[test]
+fn test_image_to_video_webhook_url() {
+    let req = ImageToVideoRequest::new(
+        VideoModel::Gen45,
+        "test",
+        MediaInput::from_url("https://example.com/img.png"),
+    )
+    .webhook_url("https://hooks.example.com/callback");
+    let json = serde_json::to_value(&req).unwrap();
+    assert_eq!(json["webhookUrl"], "https://hooks.example.com/callback");
+}
+
+#[test]
+fn test_sound_effect_webhook_url() {
+    let req = SoundEffectRequest::new("thunder").webhook_url("https://example.com/hook");
+    let json = serde_json::to_value(&req).unwrap();
+    assert_eq!(json["webhookUrl"], "https://example.com/hook");
+}
+
+#[test]
+fn test_lip_sync_webhook_url() {
+    let req = LipSyncRequest::new(
+        VideoModel::Gen45,
+        MediaInput::from_url("https://example.com/video.mp4"),
+        MediaInput::from_url("https://example.com/audio.mp3"),
+    )
+    .webhook_url("https://example.com/hook");
+    let json = serde_json::to_value(&req).unwrap();
+    assert_eq!(json["webhookUrl"], "https://example.com/hook");
+}
+
+#[test]
+fn test_image_upscale_webhook_url() {
+    let req = ImageUpscaleRequest::new(
+        ImageModel::Gen4ImageTurbo,
+        MediaInput::from_url("https://example.com/img.png"),
+    )
+    .webhook_url("https://example.com/hook");
+    let json = serde_json::to_value(&req).unwrap();
+    assert_eq!(json["webhookUrl"], "https://example.com/hook");
+}
+
+#[test]
+fn test_voice_dubbing_webhook_url() {
+    let req = VoiceDubbingRequest::new(MediaInput::from_url("https://example.com/audio.mp3"))
+        .webhook_url("https://example.com/hook");
+    let json = serde_json::to_value(&req).unwrap();
+    assert_eq!(json["webhookUrl"], "https://example.com/hook");
+}
+
+#[test]
+fn test_voice_isolation_webhook_url() {
+    let req = VoiceIsolationRequest::new(MediaInput::from_url("https://example.com/audio.mp3"))
+        .webhook_url("https://example.com/hook");
+    let json = serde_json::to_value(&req).unwrap();
+    assert_eq!(json["webhookUrl"], "https://example.com/hook");
+}
+
+#[test]
+fn test_text_to_speech_webhook_url() {
+    let req = TextToSpeechRequest::new("hello world").webhook_url("https://example.com/hook");
+    let json = serde_json::to_value(&req).unwrap();
+    assert_eq!(json["webhookUrl"], "https://example.com/hook");
+}
+
+#[test]
+fn test_speech_to_speech_webhook_url() {
+    let req = SpeechToSpeechRequest::new(MediaInput::from_url("https://example.com/audio.mp3"))
+        .webhook_url("https://example.com/hook");
+    let json = serde_json::to_value(&req).unwrap();
+    assert_eq!(json["webhookUrl"], "https://example.com/hook");
+}
+
+#[test]
+fn test_character_performance_webhook_url() {
+    let req = CharacterPerformanceRequest::new(
+        VideoModel::Gen45,
+        "test",
+        MediaInput::from_url("https://example.com/img.png"),
+        MediaInput::from_url("https://example.com/video.mp4"),
+    )
+    .webhook_url("https://example.com/hook");
+    let json = serde_json::to_value(&req).unwrap();
+    assert_eq!(json["webhookUrl"], "https://example.com/hook");
+}
+
+#[test]
+fn test_video_to_video_webhook_url() {
+    let req = VideoToVideoRequest::new(
+        VideoModel::Gen45,
+        "test",
+        MediaInput::from_url("https://example.com/video.mp4"),
+    )
+    .webhook_url("https://example.com/hook");
+    let json = serde_json::to_value(&req).unwrap();
+    assert_eq!(json["webhookUrl"], "https://example.com/hook");
+}
+
+#[test]
+fn test_text_to_image_webhook_url() {
+    let req = TextToImageRequest::new(ImageModel::Gen4ImageTurbo, "test")
+        .webhook_url("https://example.com/hook");
+    let json = serde_json::to_value(&req).unwrap();
+    assert_eq!(json["webhookUrl"], "https://example.com/hook");
+}
+
+// ── Response type Serialize roundtrip tests ─────────────────────────────
+
+#[test]
+fn test_avatar_serialize_roundtrip() {
+    let json = serde_json::json!({
+        "id": "av_123",
+        "name": "Test Avatar",
+        "description": "A test avatar",
+        "createdAt": "2024-01-01T00:00:00Z"
+    });
+    let avatar: runway_sdk::Avatar = serde_json::from_value(json).unwrap();
+    let serialized = serde_json::to_value(&avatar).unwrap();
+    assert_eq!(serialized["id"], "av_123");
+    assert_eq!(serialized["name"], "Test Avatar");
+}
+
+#[test]
+fn test_voice_serialize_roundtrip() {
+    let json = serde_json::json!({
+        "id": "voice_123",
+        "name": "Test Voice",
+        "description": "A test voice"
+    });
+    let voice: runway_sdk::Voice = serde_json::from_value(json).unwrap();
+    let serialized = serde_json::to_value(&voice).unwrap();
+    assert_eq!(serialized["id"], "voice_123");
+}
+
+#[test]
+fn test_organization_serialize_roundtrip() {
+    let json = serde_json::json!({
+        "id": "org_123",
+        "name": "Test Org",
+        "createdAt": "2024-01-01T00:00:00Z"
+    });
+    let org: runway_sdk::Organization = serde_json::from_value(json).unwrap();
+    let serialized = serde_json::to_value(&org).unwrap();
+    assert_eq!(serialized["id"], "org_123");
+}
+
+#[test]
+fn test_workflow_serialize_roundtrip() {
+    let json = serde_json::json!({
+        "id": "wf_123",
+        "name": "Test Workflow",
+        "description": "A test workflow"
+    });
+    let wf: runway_sdk::Workflow = serde_json::from_value(json).unwrap();
+    let serialized = serde_json::to_value(&wf).unwrap();
+    assert_eq!(serialized["id"], "wf_123");
+}
