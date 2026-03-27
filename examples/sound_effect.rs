@@ -6,14 +6,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let task = client
         .sound_effect()
-        .create(
-            SoundEffectRequest::new("thunder rumbling in the distance followed by heavy rain")
-                .duration(10),
-        )
+        .create(SoundEffectRequest::new("Thunder rolling over a distant city").duration(10.0))
         .await?
         .wait_for_output()
         .await?;
 
-    println!("Sound effect URL: {}", task.output.unwrap()[0]);
+    println!("Audio URL: {}", task.output_urls().unwrap()[0]);
     Ok(())
 }

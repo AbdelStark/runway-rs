@@ -1,4 +1,4 @@
-use runway_sdk::{MediaInput, RunwayClient, VideoModel, VideoToVideoRequest};
+use runway_sdk::{RunwayClient, VideoRatio, VideoToVideoReference, VideoToVideoRequest};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -8,16 +8,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .video_to_video()
         .create(
             VideoToVideoRequest::new(
-                VideoModel::Gen4Turbo,
-                "Transform into a watercolor painting style",
-                MediaInput::from_url("https://example.com/input-video.mp4"),
+                "Transform the clip into a watercolor painting style",
+                "https://example.com/input-video.mp4",
             )
-            .duration(5),
+            .ratio(VideoRatio::Landscape)
+            .references(vec![VideoToVideoReference::image(
+                "https://example.com/style-reference.png",
+            )]),
         )
         .await?
         .wait_for_output()
         .await?;
 
-    println!("Video: {}", task.output.unwrap()[0]);
+    println!("Video URL: {}", task.output_urls().unwrap()[0]);
     Ok(())
 }

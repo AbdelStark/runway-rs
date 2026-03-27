@@ -20,15 +20,19 @@ base64 = "0.22"
 mime_guess = "2"
 async-stream = "0.3"
 futures-core = "0.3"
+httpdate = "1"
+tokio-util = { version = "0.7", features = ["rt"] }
 
 [dev-dependencies]
 wiremock = "0.6"
 tokio-test = "0.4"
 assert_matches = "1"
 futures = "0.3"
+dotenvy = "0.15"
 
 [features]
 live-tests = []
+unstable-endpoints = []
 
 [[example]]
 name = "text_to_video"
@@ -57,14 +61,17 @@ path = "examples/poll_task.rs"
 [[example]]
 name = "lip_sync"
 path = "examples/lip_sync.rs"
+required-features = ["unstable-endpoints"]
 
 [[example]]
 name = "image_upscale"
 path = "examples/image_upscale.rs"
+required-features = ["unstable-endpoints"]
 
 [[example]]
 name = "list_tasks"
 path = "examples/list_tasks.rs"
+required-features = ["unstable-endpoints"]
 
 [[example]]
 name = "text_to_image"

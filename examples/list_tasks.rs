@@ -22,7 +22,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     for task in &running.tasks {
         println!(
             "Task {} — {:?} (progress: {:?})",
-            task.id, task.status, task.progress
+            task.id(),
+            task.status(),
+            task.progress()
         );
     }
 

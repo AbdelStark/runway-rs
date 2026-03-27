@@ -4,20 +4,19 @@ use runway_sdk::{RunwayClient, UsageQueryRequest};
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let client = RunwayClient::new()?;
 
-    // Get organization info
-    let org = client.organization().get().await?;
-    println!("Organization: {} ({})", org.name, org.id);
+    let org = client.organization().retrieve().await?;
+    println!("Credit balance: {}", org.credit_balance);
 
-    // Query usage for a date range
     let usage = client
         .organization()
-        .usage(
+        .retrieve_usage(
             UsageQueryRequest::new()
                 .start_date("2024-01-01")
-                .end_date("2024-12-31"),
+                .before_date("2024-02-01"),
         )
         .await?;
-    println!("Usage data: {:?}", usage.usage);
+    println!("Usage models: {}", usage.models.len());
+    println!("Usage rows: {}", usage.results.len());
 
     Ok(())
 }

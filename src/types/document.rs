@@ -1,49 +1,64 @@
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "camelCase")]
-pub struct Document {
-    pub id: String,
-    pub name: String,
-    #[serde(default)]
-    pub description: Option<String>,
-    #[serde(default)]
-    pub created_at: Option<String>,
+use crate::types::common::{CursorPage, CursorPageQuery};
+
+pub type DocumentList = CursorPage<DocumentListItem>;
+pub type DocumentListQuery = CursorPageQuery;
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[serde(rename_all = "lowercase")]
+pub enum DocumentType {
+    Text,
+    File,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
-pub struct DocumentList {
-    pub documents: Vec<Document>,
+pub struct DocumentUsedBy {
+    pub id: String,
+    #[serde(default)]
+    pub image_url: Option<String>,
+    pub name: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct Document {
+    pub id: String,
+    pub content: String,
+    pub created_at: String,
+    pub name: String,
+    #[serde(rename = "type")]
+    pub document_type: DocumentType,
+    pub updated_at: String,
+    pub used_by: Vec<DocumentUsedBy>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct DocumentListItem {
+    pub id: String,
+    pub created_at: String,
+    pub name: String,
+    #[serde(rename = "type")]
+    pub document_type: DocumentType,
+    pub updated_at: String,
+    pub used_by: Vec<DocumentUsedBy>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateDocumentRequest {
+    pub content: String,
     pub name: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub content: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub description: Option<String>,
 }
 
 impl CreateDocumentRequest {
-    pub fn new(name: impl Into<String>) -> Self {
+    pub fn new(name: impl Into<String>, content: impl Into<String>) -> Self {
         Self {
+            content: content.into(),
             name: name.into(),
-            content: None,
-            description: None,
         }
-    }
-
-    pub fn content(mut self, content: impl Into<String>) -> Self {
-        self.content = Some(content.into());
-        self
-    }
-
-    pub fn description(mut self, desc: impl Into<String>) -> Self {
-        self.description = Some(desc.into());
-        self
     }
 }
 
@@ -51,20 +66,14 @@ impl CreateDocumentRequest {
 #[serde(rename_all = "camelCase")]
 pub struct UpdateDocumentRequest {
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub name: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub content: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub description: Option<String>,
+    pub name: Option<String>,
 }
 
 impl UpdateDocumentRequest {
     pub fn new() -> Self {
-        Self {
-            name: None,
-            content: None,
-            description: None,
-        }
+        Self::default()
     }
 
     pub fn name(mut self, name: impl Into<String>) -> Self {
@@ -74,11 +83,6 @@ impl UpdateDocumentRequest {
 
     pub fn content(mut self, content: impl Into<String>) -> Self {
         self.content = Some(content.into());
-        self
-    }
-
-    pub fn description(mut self, desc: impl Into<String>) -> Self {
-        self.description = Some(desc.into());
         self
     }
 }

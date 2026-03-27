@@ -6,19 +6,23 @@
 //! # Quick start
 //!
 //! ```no_run
-//! use runway_sdk::{RunwayClient, TextToVideoRequest, VideoModel};
+//! use runway_sdk::{RunwayClient, TextToVideoGen45Request, VideoRatio};
 //!
 //! # async fn run() -> Result<(), Box<dyn std::error::Error>> {
 //! let client = RunwayClient::new()?;
 //!
 //! let task = client
 //!     .text_to_video()
-//!     .create(TextToVideoRequest::new(VideoModel::Gen45, "A serene mountain at sunrise"))
+//!     .create(TextToVideoGen45Request::new(
+//!         "A serene mountain at sunrise",
+//!         VideoRatio::Landscape,
+//!         5,
+//!     ))
 //!     .await?
 //!     .wait_for_output()
 //!     .await?;
 //!
-//! println!("Video URL: {}", task.output.unwrap()[0]);
+//! println!("Video URL: {}", task.output_urls().unwrap()[0]);
 //! # Ok(())
 //! # }
 //! ```
@@ -66,11 +70,9 @@
 //! | [`speech_to_speech()`](RunwayClient::speech_to_speech) | Voice conversion |
 //! | [`sound_effect()`](RunwayClient::sound_effect) | Generate sound effects |
 //! | [`character_performance()`](RunwayClient::character_performance) | Animate characters |
-//! | [`lip_sync()`](RunwayClient::lip_sync) | Synchronize lip movements |
-//! | [`image_upscale()`](RunwayClient::image_upscale) | Upscale images |
 //! | [`voice_dubbing()`](RunwayClient::voice_dubbing) | Dub audio to target language |
 //! | [`voice_isolation()`](RunwayClient::voice_isolation) | Isolate voice from audio |
-//! | [`tasks()`](RunwayClient::tasks) | List, get, cancel, and delete tasks |
+//! | [`tasks()`](RunwayClient::tasks) | Retrieve and delete tasks |
 //! | [`uploads()`](RunwayClient::uploads) | Upload media files |
 //! | [`avatars()`](RunwayClient::avatars) | Manage avatars |
 //! | [`voices()`](RunwayClient::voices) | Manage voice clones |
@@ -78,18 +80,27 @@
 //! | [`workflows()`](RunwayClient::workflows) | List and run workflows |
 //! | [`organization()`](RunwayClient::organization) | Organization info and usage |
 //!
+//! Unofficial endpoints such as `lip_sync`, `image_upscale`, and task list or
+//! cancel helpers are available only when the crate is built with the
+//! `unstable-endpoints` feature.
+//!
 //! # Task lifecycle
 //!
-//! Generation methods return a [`PendingTask`] that can be polled or streamed:
+//! Generation methods return a [`PendingTask`] that can be polled or streamed.
+//! Workflow runs can return a [`PendingWorkflowInvocation`] via
+//! [`WorkflowsResource::run_pending`](crate::resources::WorkflowsResource::run_pending):
 //!
 //! ```no_run
 //! # use runway_sdk::*;
 //! # async fn run() -> Result<(), Box<dyn std::error::Error>> {
 //! # let client = RunwayClient::with_api_key("test")?;
-//! // Option 1: Wait for completion
 //! let task = client
 //!     .text_to_video()
-//!     .create(TextToVideoRequest::new(VideoModel::Gen45, "A cat"))
+//!     .create(TextToVideoGen45Request::new(
+//!         "A cat",
+//!         VideoRatio::Landscape,
+//!         5,
+//!     ))
 //!     .await?
 //!     .wait_for_output()
 //!     .await?;
@@ -104,20 +115,20 @@
 //! # Error handling
 //!
 //! All methods return [`Result<T, RunwayError>`]. The error type covers API
-//! errors, rate limiting, task failures, and network issues:
+//! errors, rate limiting, task or workflow failures, and transport issues:
 //!
 //! ```no_run
 //! # use runway_sdk::*;
 //! # async fn run() -> Result<(), Box<dyn std::error::Error>> {
 //! # let client = RunwayClient::with_api_key("test")?;
-//! match client.tasks().get(uuid::Uuid::new_v4()).await {
-//!     Ok(task) => println!("Task status: {}", task.status),
+//! match client.tasks().retrieve(uuid::Uuid::new_v4()).await {
+//!     Ok(task) => println!("Task status: {}", task.status()),
 //!     Err(RunwayError::Unauthorized) => eprintln!("Check your API key"),
-//!     Err(RunwayError::RateLimited { retry_after }) => {
+//!     Err(RunwayError::RateLimited { retry_after, .. }) => {
 //!         eprintln!("Rate limited, retry after {:?}", retry_after);
 //!     }
-//!     Err(RunwayError::Api { status, message, code }) => {
-//!         eprintln!("API error {}: {} (code: {:?})", status, message, code);
+//!     Err(RunwayError::Api { status, message, code, kind, .. }) => {
+//!         eprintln!("API error {} ({:?}): {} (code: {:?})", status, kind, message, code);
 //!     }
 //!     Err(e) => eprintln!("Error: {}", e),
 //! }
@@ -132,8 +143,8 @@ pub mod polling;
 pub mod resources;
 pub mod types;
 
-pub use client::RunwayClient;
+pub use client::{RequestOptions, ResponseMetadata, RunwayClient, WithResponse};
 pub use config::Config;
 pub use error::RunwayError;
-pub use polling::PendingTask;
+pub use polling::{PendingTask, PendingWorkflowInvocation, WaitOptions};
 pub use types::*;

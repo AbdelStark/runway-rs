@@ -1,4 +1,4 @@
-use runway_sdk::{RunwayClient, TextToSpeechRequest};
+use runway_sdk::{RunwayClient, RunwayPresetVoice, RunwayPresetVoiceId, TextToSpeechRequest};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -6,14 +6,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let task = client
         .text_to_speech()
-        .create(
-            TextToSpeechRequest::new("Welcome to the future of AI-powered media generation.")
-                .voice_id("voice-123"),
-        )
+        .create(TextToSpeechRequest::new(
+            "Welcome to the future of AI-powered media generation.",
+            RunwayPresetVoice::new(RunwayPresetVoiceId::Maya),
+        ))
         .await?
         .wait_for_output()
         .await?;
 
-    println!("Speech audio URL: {}", task.output.unwrap()[0]);
+    println!("Audio URL: {}", task.output_urls().unwrap()[0]);
     Ok(())
 }

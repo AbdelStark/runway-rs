@@ -1,30 +1,23 @@
-use runway_sdk::{ImageToVideoRequest, MediaInput, RunwayClient, VideoModel};
-use std::path::Path;
+use runway_sdk::{ImageToVideoGen4TurboRequest, RunwayClient, VideoRatio};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let client = RunwayClient::new()?;
 
-    // Upload a local file first
-    let upload_uri = client
-        .uploads()
-        .upload_file(Path::new("./my-image.jpg"))
-        .await?;
-
     let task = client
         .image_to_video()
         .create(
-            ImageToVideoRequest::new(
-                VideoModel::Gen4Turbo,
-                "A gentle zoom into the scene with soft ambient lighting",
-                MediaInput::from_runway_uri(upload_uri),
+            ImageToVideoGen4TurboRequest::new(
+                "https://example.com/input-image.jpg",
+                VideoRatio::Landscape,
             )
+            .prompt_text("Animate the clouds and push the camera in slowly")
             .duration(10),
         )
         .await?
         .wait_for_output()
         .await?;
 
-    println!("Video: {}", task.output.unwrap()[0]);
+    println!("Video URL: {}", task.output_urls().unwrap()[0]);
     Ok(())
 }

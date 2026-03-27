@@ -1,31 +1,32 @@
-use runway_sdk::{RunWorkflowRequest, RunwayClient};
+use runway_sdk::{PrimitiveNodeValue, RunWorkflowRequest, RunwayClient, WorkflowNodeOutputValue};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let client = RunwayClient::new()?;
 
-    // List workflows
     let workflows = client.workflows().list().await?;
-    println!("Available workflows: {}", workflows.workflows.len());
+    println!("Workflow groups: {}", workflows.data.len());
 
-    for wf in &workflows.workflows {
-        println!("  - {} ({})", wf.name, wf.id);
-    }
+    if let Some(group) = workflows.data.first() {
+        println!("Workflow family: {}", group.name);
 
-    // Run a workflow (if any exist)
-    if let Some(wf) = workflows.workflows.first() {
-        let run = client
-            .workflows()
-            .run(
-                &wf.id,
-                RunWorkflowRequest::new().param("prompt", serde_json::json!("hello world")),
-            )
-            .await?;
-        println!("Workflow run started: {}", run.id);
+        if let Some(version) = group.versions.first() {
+            let invocation = client
+                .workflows()
+                .run_pending(
+                    &version.id,
+                    RunWorkflowRequest::new().node_output(
+                        "prompt-node",
+                        "prompt",
+                        WorkflowNodeOutputValue::Primitive {
+                            value: PrimitiveNodeValue::from("hello world"),
+                        },
+                    ),
+                )
+                .await?;
 
-        // Check invocation status
-        let invocation = client.workflow_invocations().get(&run.id).await?;
-        println!("Invocation status: {:?}", invocation.status);
+            println!("Workflow invocation started: {}", invocation.id());
+        }
     }
 
     Ok(())

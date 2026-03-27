@@ -1,4 +1,4 @@
-use runway_sdk::{RunwayClient, TextToVideoRequest, VideoModel, VideoRatio};
+use runway_sdk::{RunwayClient, TextToVideoGen45Request, VideoRatio};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -6,18 +6,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let task = client
         .text_to_video()
-        .create(
-            TextToVideoRequest::new(
-                VideoModel::Gen45,
-                "A serene mountain landscape at sunrise with mist rolling through the valleys",
-            )
-            .ratio(VideoRatio::Landscape)
-            .duration(5),
-        )
+        .create(TextToVideoGen45Request::new(
+            "A serene mountain landscape at sunrise with mist rolling through the valleys",
+            VideoRatio::Landscape,
+            5,
+        ))
         .await?
         .wait_for_output()
         .await?;
 
-    println!("Video URL: {}", task.output.unwrap()[0]);
+    println!("Video URL: {}", task.output_urls().unwrap()[0]);
     Ok(())
 }

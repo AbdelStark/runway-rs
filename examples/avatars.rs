@@ -1,33 +1,36 @@
-use runway_sdk::{CreateAvatarRequest, RunwayClient, UpdateAvatarRequest};
+use runway_sdk::{
+    AvatarVoiceInput, CreateAvatarRequest, CursorPageQuery, RunwayClient, UpdateAvatarRequest,
+};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let client = RunwayClient::new()?;
 
-    // Create an avatar
     let avatar = client
         .avatars()
-        .create(CreateAvatarRequest::new("My Avatar").description("A test avatar"))
+        .create(CreateAvatarRequest::new(
+            "My Avatar",
+            "Helpful and concise",
+            "https://example.com/avatar.png",
+            AvatarVoiceInput::runway_live_preset("maya"),
+        ))
         .await?;
-    println!("Created avatar: {} ({})", avatar.name, avatar.id);
+    println!("Created avatar: {} ({})", avatar.name(), avatar.id());
 
-    // List all avatars
-    let list = client.avatars().list().await?;
-    println!("Total avatars: {}", list.avatars.len());
+    let list = client.avatars().list(CursorPageQuery::new()).await?;
+    println!("Total avatars on this page: {}", list.data.len());
 
-    // Update the avatar
     let updated = client
         .avatars()
         .update(
-            &avatar.id,
+            avatar.id(),
             UpdateAvatarRequest::new().name("Renamed Avatar"),
         )
         .await?;
-    println!("Updated avatar name: {}", updated.name);
+    println!("Updated avatar name: {}", updated.name());
 
-    // Delete the avatar
-    client.avatars().delete(&avatar.id).await?;
-    println!("Avatar deleted");
+    client.avatars().delete(avatar.id()).await?;
+    println!("Deleted avatar {}", avatar.id());
 
     Ok(())
 }

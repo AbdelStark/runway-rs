@@ -72,15 +72,17 @@ fn test_task_deserialization() {
         "id": "550e8400-e29b-41d4-a716-446655440000",
         "status": "SUCCEEDED",
         "createdAt": "2024-01-01T00:00:00Z",
-        "output": ["https://example.com/video.mp4"],
-        "progress": 1.0
+        "output": ["https://example.com/video.mp4"]
     }"#;
 
     let task: Task = serde_json::from_str(json).unwrap();
-    assert_eq!(task.status, TaskStatus::Succeeded);
-    assert_eq!(task.output.unwrap(), vec!["https://example.com/video.mp4"]);
-    assert_eq!(task.progress, Some(1.0));
-    assert!(task.failure.is_none());
+    assert_eq!(task.status(), TaskStatus::Succeeded);
+    assert_eq!(
+        task.output_urls().unwrap(),
+        ["https://example.com/video.mp4"]
+    );
+    assert_eq!(task.progress(), None);
+    assert!(task.failure().is_none());
 }
 
 #[test]
@@ -94,17 +96,15 @@ fn test_task_failed_deserialization() {
     }"#;
 
     let task: Task = serde_json::from_str(json).unwrap();
-    assert_eq!(task.status, TaskStatus::Failed);
-    assert_eq!(task.failure, Some("Content moderation triggered".into()));
-    assert_eq!(task.failure_code, Some("CONTENT_MODERATION".into()));
+    assert_eq!(task.status(), TaskStatus::Failed);
+    assert_eq!(task.failure(), Some("Content moderation triggered"));
+    assert_eq!(task.failure_code(), Some("CONTENT_MODERATION"));
 }
 
 #[test]
 fn test_text_to_video_request_serialization() {
-    let req = TextToVideoRequest::new(VideoModel::Gen45, "A cat on a skateboard")
-        .ratio(VideoRatio::Landscape)
-        .duration(5)
-        .seed(42);
+    let req =
+        TextToVideoGen45Request::new("A cat on a skateboard", VideoRatio::Landscape, 5).seed(42);
 
     let json = serde_json::to_value(&req).unwrap();
     assert_eq!(json["model"], "gen4.5");
@@ -116,19 +116,17 @@ fn test_text_to_video_request_serialization() {
 
 #[test]
 fn test_image_to_video_request_serialization() {
-    let req = ImageToVideoRequest::new(
-        VideoModel::Gen4Turbo,
-        "Zoom in slowly",
-        MediaInput::from_url("https://example.com/image.jpg"),
-    )
-    .duration(10);
+    let req =
+        ImageToVideoGen4TurboRequest::new("https://example.com/image.jpg", VideoRatio::Landscape)
+            .prompt_text("Zoom in slowly")
+            .duration(10);
 
     let json = serde_json::to_value(&req).unwrap();
     assert_eq!(json["model"], "gen4_turbo");
     assert_eq!(json["promptText"], "Zoom in slowly");
     assert_eq!(json["promptImage"], "https://example.com/image.jpg");
     assert_eq!(json["duration"], 10);
-    assert!(json.get("ratio").is_none());
+    assert_eq!(json["ratio"], "1280:720");
 }
 
 #[test]
@@ -154,50 +152,80 @@ fn test_media_input_from_string() {
 
 #[test]
 fn test_sound_effect_request_serialization() {
-    let req = SoundEffectRequest::new("thunder rumbling in the distance").duration(10);
+    let req = SoundEffectRequest::new("thunder rumbling in the distance").duration(10.0);
     let json = serde_json::to_value(&req).unwrap();
+    assert_eq!(json["model"], "eleven_text_to_sound_v2");
     assert_eq!(json["promptText"], "thunder rumbling in the distance");
-    assert_eq!(json["duration"], 10);
+    assert_eq!(json["duration"], 10.0);
 }
 
 #[test]
 fn test_text_to_image_request_serialization() {
-    let req = TextToImageRequest::new(ImageModel::Gen4ImageTurbo, "A cyberpunk city")
-        .ratio(VideoRatio::Wide)
-        .seed(123);
+    let req = TextToImageGen4ImageTurboRequest::new(
+        "A cyberpunk city",
+        ImageRatio::Square1024,
+        vec![TextToImageReferenceImage::new(
+            "https://example.com/reference.png",
+        )],
+    )
+    .seed(123);
     let json = serde_json::to_value(&req).unwrap();
     assert_eq!(json["model"], "gen4_image_turbo");
     assert_eq!(json["promptText"], "A cyberpunk city");
-    assert_eq!(json["ratio"], "1104:832");
+    assert_eq!(json["ratio"], "1024:1024");
+    assert_eq!(
+        json["referenceImages"][0]["uri"],
+        "https://example.com/reference.png"
+    );
     assert_eq!(json["seed"], 123);
 }
 
 #[test]
 fn test_create_avatar_request() {
-    let req = CreateAvatarRequest::new("Test Avatar")
-        .description("A test")
-        .init_image("https://example.com/img.jpg");
+    let req = CreateAvatarRequest::new(
+        "Test Avatar",
+        "Friendly and concise",
+        "https://example.com/img.jpg",
+        AvatarVoiceInput::runway_live_preset("adrian"),
+    )
+    .document_ids(vec!["doc-1".to_string()]);
     let json = serde_json::to_value(&req).unwrap();
     assert_eq!(json["name"], "Test Avatar");
-    assert_eq!(json["description"], "A test");
-    assert_eq!(json["initImage"], "https://example.com/img.jpg");
+    assert_eq!(json["personality"], "Friendly and concise");
+    assert_eq!(json["referenceImage"], "https://example.com/img.jpg");
+    assert_eq!(json["voice"]["type"], "runway-live-preset");
+    assert_eq!(json["voice"]["presetId"], "adrian");
+    assert_eq!(json["documentIds"][0], "doc-1");
 }
 
 #[test]
 fn test_run_workflow_request() {
     let req = RunWorkflowRequest::new()
-        .param("prompt", serde_json::json!("hello"))
-        .param("steps", serde_json::json!(20));
+        .node_output(
+            "node-a",
+            "prompt",
+            WorkflowNodeOutputValue::Primitive {
+                value: PrimitiveNodeValue::from("hello"),
+            },
+        )
+        .node_output(
+            "node-a",
+            "steps",
+            WorkflowNodeOutputValue::Primitive {
+                value: PrimitiveNodeValue::from(20_u64),
+            },
+        );
     let json = serde_json::to_value(&req).unwrap();
-    assert_eq!(json["params"]["prompt"], "hello");
-    assert_eq!(json["params"]["steps"], 20);
+    assert_eq!(json["nodeOutputs"]["node-a"]["prompt"]["type"], "primitive");
+    assert_eq!(json["nodeOutputs"]["node-a"]["prompt"]["value"], "hello");
+    assert_eq!(json["nodeOutputs"]["node-a"]["steps"]["value"], 20.0);
 }
 
 #[test]
 fn test_content_moderation_serialization() {
-    let cm = ContentModeration::Automatic;
-    let json = serde_json::to_string(&cm).unwrap();
-    assert_eq!(json, r#""automatic""#);
+    let cm = ContentModeration::new().public_figure_threshold(PublicFigureThreshold::Low);
+    let json = serde_json::to_value(&cm).unwrap();
+    assert_eq!(json["publicFigureThreshold"], "low");
 }
 
 #[test]
@@ -231,98 +259,98 @@ fn test_client_with_invalid_api_key() {
 
 #[test]
 fn test_video_to_video_request_serialization() {
-    let req = VideoToVideoRequest::new(
-        VideoModel::Gen45,
-        "Transform the scene",
-        MediaInput::from_url("https://example.com/video.mp4"),
-    )
-    .ratio(VideoRatio::Portrait)
-    .duration(8);
+    let req = VideoToVideoRequest::new("Transform the scene", "https://example.com/video.mp4")
+        .ratio(VideoRatio::Portrait)
+        .references(vec![VideoToVideoReference::image(
+            "https://example.com/reference.png",
+        )]);
 
     let json = serde_json::to_value(&req).unwrap();
-    assert_eq!(json["model"], "gen4.5");
+    assert_eq!(json["model"], "gen4_aleph");
     assert_eq!(json["promptText"], "Transform the scene");
-    assert_eq!(json["promptVideo"], "https://example.com/video.mp4");
+    assert_eq!(json["videoUri"], "https://example.com/video.mp4");
     assert_eq!(json["ratio"], "720:1280");
-    assert_eq!(json["duration"], 8);
+    assert_eq!(json["references"][0]["type"], "image");
 }
 
 #[test]
 fn test_character_performance_request_serialization() {
     let req = CharacterPerformanceRequest::new(
-        VideoModel::Gen4Turbo,
-        "Act surprised",
-        MediaInput::from_url("https://example.com/face.jpg"),
-        MediaInput::from_url("https://example.com/motion.mp4"),
+        CharacterPerformanceCharacter::image("https://example.com/face.jpg"),
+        CharacterPerformanceReference::video("https://example.com/motion.mp4"),
     )
-    .duration(5)
+    .expression_intensity(5)
     .seed(99);
 
     let json = serde_json::to_value(&req).unwrap();
-    assert_eq!(json["model"], "gen4_turbo");
-    assert_eq!(json["promptText"], "Act surprised");
-    assert_eq!(json["promptImage"], "https://example.com/face.jpg");
-    assert_eq!(json["promptVideo"], "https://example.com/motion.mp4");
-    assert_eq!(json["duration"], 5);
+    assert_eq!(json["model"], "act_two");
+    assert_eq!(json["character"]["type"], "image");
+    assert_eq!(json["character"]["uri"], "https://example.com/face.jpg");
+    assert_eq!(json["reference"]["type"], "video");
+    assert_eq!(json["reference"]["uri"], "https://example.com/motion.mp4");
+    assert_eq!(json["expressionIntensity"], 5);
     assert_eq!(json["seed"], 99);
 }
 
 #[test]
 fn test_speech_to_speech_request_serialization() {
-    let req = SpeechToSpeechRequest::new(MediaInput::from_url("https://example.com/audio.wav"))
-        .voice_id("voice-123")
-        .seed(42);
+    let req = SpeechToSpeechRequest::new(
+        SpeechToSpeechMedia::audio("https://example.com/audio.wav"),
+        RunwayPresetVoice::new(RunwayPresetVoiceId::Maya),
+    )
+    .remove_background_noise(true);
 
     let json = serde_json::to_value(&req).unwrap();
-    assert_eq!(json["audio"], "https://example.com/audio.wav");
-    assert_eq!(json["voiceId"], "voice-123");
-    assert_eq!(json["seed"], 42);
+    assert_eq!(json["media"]["type"], "audio");
+    assert_eq!(json["media"]["uri"], "https://example.com/audio.wav");
+    assert_eq!(json["voice"]["type"], "runway-preset");
+    assert_eq!(json["voice"]["presetId"], "Maya");
+    assert_eq!(json["removeBackgroundNoise"], true);
 }
 
 #[test]
 fn test_text_to_speech_request_serialization() {
-    let req = TextToSpeechRequest::new("Hello, world!")
-        .voice_id("voice-456")
-        .seed(7);
+    let req = TextToSpeechRequest::new(
+        "Hello, world!",
+        RunwayPresetVoice::new(RunwayPresetVoiceId::Maya),
+    );
 
     let json = serde_json::to_value(&req).unwrap();
+    assert_eq!(json["model"], "eleven_multilingual_v2");
     assert_eq!(json["promptText"], "Hello, world!");
-    assert_eq!(json["voiceId"], "voice-456");
-    assert_eq!(json["seed"], 7);
+    assert_eq!(json["voice"]["type"], "runway-preset");
+    assert_eq!(json["voice"]["presetId"], "Maya");
 }
 
 #[test]
 fn test_voice_dubbing_request_serialization() {
-    let req = VoiceDubbingRequest::new(MediaInput::from_url("https://example.com/audio.mp3"))
-        .target_language("es")
-        .seed(10);
+    let req = VoiceDubbingRequest::new("https://example.com/audio.mp3", VoiceDubbingLanguage::Es)
+        .num_speakers(2)
+        .drop_background_audio(true);
 
     let json = serde_json::to_value(&req).unwrap();
-    assert_eq!(json["audio"], "https://example.com/audio.mp3");
-    assert_eq!(json["targetLanguage"], "es");
-    assert_eq!(json["seed"], 10);
+    assert_eq!(json["audioUri"], "https://example.com/audio.mp3");
+    assert_eq!(json["targetLang"], "es");
+    assert_eq!(json["numSpeakers"], 2);
+    assert_eq!(json["dropBackgroundAudio"], true);
 }
 
 #[test]
 fn test_voice_isolation_request_serialization() {
-    let req =
-        VoiceIsolationRequest::new(MediaInput::from_url("https://example.com/noisy.wav")).seed(55);
+    let req = VoiceIsolationRequest::new("https://example.com/noisy.wav");
 
     let json = serde_json::to_value(&req).unwrap();
-    assert_eq!(json["audio"], "https://example.com/noisy.wav");
-    assert_eq!(json["seed"], 55);
+    assert_eq!(json["audioUri"], "https://example.com/noisy.wav");
+    assert_eq!(json["model"], "eleven_voice_isolation");
 }
 
 #[test]
 fn test_create_document_request_serialization() {
-    let req = CreateDocumentRequest::new("My Document")
-        .content("Document body text")
-        .description("A test document");
+    let req = CreateDocumentRequest::new("My Document", "Document body text");
 
     let json = serde_json::to_value(&req).unwrap();
     assert_eq!(json["name"], "My Document");
     assert_eq!(json["content"], "Document body text");
-    assert_eq!(json["description"], "A test document");
 }
 
 #[test]
@@ -334,28 +362,34 @@ fn test_update_document_request_serialization() {
     let json = serde_json::to_value(&req).unwrap();
     assert_eq!(json["name"], "Updated Name");
     assert_eq!(json["content"], "New content");
-    assert!(json.get("description").is_none());
 }
 
 #[test]
 fn test_create_voice_request_serialization() {
-    let req = CreateVoiceRequest::new("My Voice")
-        .audio("https://example.com/sample.wav")
+    let req = CreateVoiceRequest::new("My Voice", "Warm, cinematic narrator with confident pacing")
         .description("A custom voice");
 
     let json = serde_json::to_value(&req).unwrap();
     assert_eq!(json["name"], "My Voice");
-    assert_eq!(json["audio"], "https://example.com/sample.wav");
+    assert_eq!(json["from"]["type"], "text");
+    assert_eq!(json["from"]["model"], "eleven_multilingual_ttv_v2");
+    assert_eq!(
+        json["from"]["prompt"],
+        "Warm, cinematic narrator with confident pacing"
+    );
     assert_eq!(json["description"], "A custom voice");
 }
 
 #[test]
 fn test_preview_voice_request_serialization() {
-    let req = PreviewVoiceRequest::new("Test speech text").voice_id("voice-789");
+    let req = PreviewVoiceRequest::new("Warm and expressive voice for product demos");
 
     let json = serde_json::to_value(&req).unwrap();
-    assert_eq!(json["text"], "Test speech text");
-    assert_eq!(json["voiceId"], "voice-789");
+    assert_eq!(
+        json["prompt"],
+        "Warm and expressive voice for product demos"
+    );
+    assert_eq!(json["model"], "eleven_multilingual_ttv_v2");
 }
 
 #[test]
@@ -366,33 +400,46 @@ fn test_usage_query_request_serialization() {
 
     let json = serde_json::to_value(&req).unwrap();
     assert_eq!(json["startDate"], "2024-01-01");
-    assert_eq!(json["endDate"], "2024-12-31");
+    assert_eq!(json["beforeDate"], "2024-12-31");
 }
 
 #[test]
 fn test_create_realtime_session_request_serialization() {
-    let req = CreateRealtimeSessionRequest::new()
-        .model("gen4_turbo")
-        .params(serde_json::json!({"key": "value"}));
+    let req = CreateRealtimeSessionRequest::new(RealtimeAvatarInput::custom("avatar-123"))
+        .max_duration(900)
+        .personality("Helpful and upbeat")
+        .start_script("Welcome to the session");
 
     let json = serde_json::to_value(&req).unwrap();
-    assert_eq!(json["model"], "gen4_turbo");
-    assert_eq!(json["params"]["key"], "value");
+    assert_eq!(json["model"], "gwm1_avatars");
+    assert_eq!(json["avatar"]["type"], "custom");
+    assert_eq!(json["avatar"]["avatarId"], "avatar-123");
+    assert_eq!(json["maxDuration"], 900);
+    assert_eq!(json["personality"], "Helpful and upbeat");
+    assert_eq!(json["startScript"], "Welcome to the session");
 }
 
 #[test]
 fn test_update_avatar_request_serialization() {
     let req = UpdateAvatarRequest::new()
         .name("New Name")
-        .description("Updated description");
+        .personality("Updated personality")
+        .reference_image("https://example.com/new.jpg")
+        .voice(AvatarVoiceInput::custom("voice-123"))
+        .clear_start_script();
 
     let json = serde_json::to_value(&req).unwrap();
     assert_eq!(json["name"], "New Name");
-    assert_eq!(json["description"], "Updated description");
+    assert_eq!(json["personality"], "Updated personality");
+    assert_eq!(json["referenceImage"], "https://example.com/new.jpg");
+    assert_eq!(json["voice"]["type"], "custom");
+    assert_eq!(json["voice"]["id"], "voice-123");
+    assert!(json["startScript"].is_null());
 }
 
+#[cfg(feature = "unstable-endpoints")]
 // ── Lip Sync ────────────────────────────────────────────────────────────
-
+#[cfg(feature = "unstable-endpoints")]
 #[test]
 fn test_lip_sync_request_serialization() {
     let req = LipSyncRequest::new(
@@ -412,6 +459,7 @@ fn test_lip_sync_request_serialization() {
     assert!(json.get("contentModeration").is_none());
 }
 
+#[cfg(feature = "unstable-endpoints")]
 #[test]
 fn test_lip_sync_request_minimal() {
     let req = LipSyncRequest::new(
@@ -426,8 +474,9 @@ fn test_lip_sync_request_minimal() {
     assert!(json.get("seed").is_none());
 }
 
+#[cfg(feature = "unstable-endpoints")]
 // ── Image Upscale ───────────────────────────────────────────────────────
-
+#[cfg(feature = "unstable-endpoints")]
 #[test]
 fn test_image_upscale_request_serialization() {
     let req = ImageUpscaleRequest::new(
@@ -444,6 +493,7 @@ fn test_image_upscale_request_serialization() {
     assert_eq!(json["seed"], 7);
 }
 
+#[cfg(feature = "unstable-endpoints")]
 #[test]
 fn test_image_upscale_request_minimal() {
     let req = ImageUpscaleRequest::new(
@@ -457,8 +507,9 @@ fn test_image_upscale_request_minimal() {
     assert!(json.get("seed").is_none());
 }
 
+#[cfg(feature = "unstable-endpoints")]
 // ── Task List Query ─────────────────────────────────────────────────────
-
+#[cfg(feature = "unstable-endpoints")]
 #[test]
 fn test_task_list_query_serialization() {
     let query = TaskListQuery::new()
@@ -472,6 +523,7 @@ fn test_task_list_query_serialization() {
     assert_eq!(json["offset"], 5);
 }
 
+#[cfg(feature = "unstable-endpoints")]
 #[test]
 fn test_task_list_query_empty() {
     let query = TaskListQuery::new();
@@ -481,6 +533,7 @@ fn test_task_list_query_empty() {
     assert!(json.get("offset").is_none());
 }
 
+#[cfg(feature = "unstable-endpoints")]
 #[test]
 fn test_task_list_deserialization() {
     let json = r#"{
@@ -503,8 +556,8 @@ fn test_task_list_deserialization() {
 
     let list: TaskList = serde_json::from_str(json).unwrap();
     assert_eq!(list.tasks.len(), 2);
-    assert_eq!(list.tasks[0].status, TaskStatus::Succeeded);
-    assert_eq!(list.tasks[1].status, TaskStatus::Running);
+    assert_eq!(list.tasks[0].status(), TaskStatus::Succeeded);
+    assert_eq!(list.tasks[1].status(), TaskStatus::Running);
     assert_eq!(list.has_more, Some(true));
 }
 
@@ -568,127 +621,45 @@ fn test_config_builder() {
     assert_eq!(config.max_poll_duration, Duration::from_secs(300));
 }
 
-// ── Webhook URL serialization tests ─────────────────────────────────────
+// ── Stable generation validation tests ─────────────────────────────────
 
 #[test]
-fn test_text_to_video_webhook_url() {
-    let req = TextToVideoRequest::new(VideoModel::Gen45, "test prompt")
-        .webhook_url("https://example.com/webhook");
-    let json = serde_json::to_value(&req).unwrap();
-    assert_eq!(json["webhookUrl"], "https://example.com/webhook");
-}
-
-#[test]
-fn test_text_to_video_no_webhook_url() {
-    let req = TextToVideoRequest::new(VideoModel::Gen45, "test prompt");
+fn test_stable_generation_requests_do_not_serialize_webhook_url() {
+    let req = TextToVideoGen45Request::new("test prompt", VideoRatio::Landscape, 5);
     let json = serde_json::to_value(&req).unwrap();
     assert!(json.get("webhookUrl").is_none());
 }
 
 #[test]
-fn test_image_to_video_webhook_url() {
-    let req = ImageToVideoRequest::new(
-        VideoModel::Gen45,
-        "test",
-        MediaInput::from_url("https://example.com/img.png"),
-    )
-    .webhook_url("https://hooks.example.com/callback");
-    let json = serde_json::to_value(&req).unwrap();
-    assert_eq!(json["webhookUrl"], "https://hooks.example.com/callback");
+fn test_text_to_video_gen45_validation_rejects_invalid_ratio() {
+    let req = TextToVideoGen45Request::new("test prompt", VideoRatio::Wide, 5);
+    let err = req.validate().unwrap_err();
+    assert!(err.to_string().contains("ratio"));
 }
 
 #[test]
-fn test_sound_effect_webhook_url() {
-    let req = SoundEffectRequest::new("thunder").webhook_url("https://example.com/hook");
-    let json = serde_json::to_value(&req).unwrap();
-    assert_eq!(json["webhookUrl"], "https://example.com/hook");
+fn test_image_to_video_veo31_validation_rejects_last_frame_only() {
+    let req = ImageToVideoVeo31Request::new(
+        PromptImageInput::Frames(vec![PromptFrame::last("https://example.com/last.png")]),
+        VideoRatio::Landscape,
+    );
+    let err = req.validate().unwrap_err();
+    assert!(err.to_string().contains("first prompt frame"));
 }
 
 #[test]
-fn test_lip_sync_webhook_url() {
-    let req = LipSyncRequest::new(
-        VideoModel::Gen45,
-        MediaInput::from_url("https://example.com/video.mp4"),
-        MediaInput::from_url("https://example.com/audio.mp3"),
-    )
-    .webhook_url("https://example.com/hook");
-    let json = serde_json::to_value(&req).unwrap();
-    assert_eq!(json["webhookUrl"], "https://example.com/hook");
+fn test_sound_effect_validation_rejects_out_of_range_duration() {
+    let req = SoundEffectRequest::new("thunder").duration(31.0);
+    let err = req.validate().unwrap_err();
+    assert!(err.to_string().contains("duration"));
 }
 
 #[test]
-fn test_image_upscale_webhook_url() {
-    let req = ImageUpscaleRequest::new(
-        ImageModel::Gen4ImageTurbo,
-        MediaInput::from_url("https://example.com/img.png"),
-    )
-    .webhook_url("https://example.com/hook");
-    let json = serde_json::to_value(&req).unwrap();
-    assert_eq!(json["webhookUrl"], "https://example.com/hook");
-}
-
-#[test]
-fn test_voice_dubbing_webhook_url() {
-    let req = VoiceDubbingRequest::new(MediaInput::from_url("https://example.com/audio.mp3"))
-        .webhook_url("https://example.com/hook");
-    let json = serde_json::to_value(&req).unwrap();
-    assert_eq!(json["webhookUrl"], "https://example.com/hook");
-}
-
-#[test]
-fn test_voice_isolation_webhook_url() {
-    let req = VoiceIsolationRequest::new(MediaInput::from_url("https://example.com/audio.mp3"))
-        .webhook_url("https://example.com/hook");
-    let json = serde_json::to_value(&req).unwrap();
-    assert_eq!(json["webhookUrl"], "https://example.com/hook");
-}
-
-#[test]
-fn test_text_to_speech_webhook_url() {
-    let req = TextToSpeechRequest::new("hello world").webhook_url("https://example.com/hook");
-    let json = serde_json::to_value(&req).unwrap();
-    assert_eq!(json["webhookUrl"], "https://example.com/hook");
-}
-
-#[test]
-fn test_speech_to_speech_webhook_url() {
-    let req = SpeechToSpeechRequest::new(MediaInput::from_url("https://example.com/audio.mp3"))
-        .webhook_url("https://example.com/hook");
-    let json = serde_json::to_value(&req).unwrap();
-    assert_eq!(json["webhookUrl"], "https://example.com/hook");
-}
-
-#[test]
-fn test_character_performance_webhook_url() {
-    let req = CharacterPerformanceRequest::new(
-        VideoModel::Gen45,
-        "test",
-        MediaInput::from_url("https://example.com/img.png"),
-        MediaInput::from_url("https://example.com/video.mp4"),
-    )
-    .webhook_url("https://example.com/hook");
-    let json = serde_json::to_value(&req).unwrap();
-    assert_eq!(json["webhookUrl"], "https://example.com/hook");
-}
-
-#[test]
-fn test_video_to_video_webhook_url() {
-    let req = VideoToVideoRequest::new(
-        VideoModel::Gen45,
-        "test",
-        MediaInput::from_url("https://example.com/video.mp4"),
-    )
-    .webhook_url("https://example.com/hook");
-    let json = serde_json::to_value(&req).unwrap();
-    assert_eq!(json["webhookUrl"], "https://example.com/hook");
-}
-
-#[test]
-fn test_text_to_image_webhook_url() {
-    let req = TextToImageRequest::new(ImageModel::Gen4ImageTurbo, "test")
-        .webhook_url("https://example.com/hook");
-    let json = serde_json::to_value(&req).unwrap();
-    assert_eq!(json["webhookUrl"], "https://example.com/hook");
+fn test_voice_dubbing_validation_rejects_zero_speakers() {
+    let req = VoiceDubbingRequest::new("https://example.com/audio.mp3", VoiceDubbingLanguage::Es)
+        .num_speakers(0);
+    let err = req.validate().unwrap_err();
+    assert!(err.to_string().contains("numSpeakers"));
 }
 
 // ── Response type Serialize roundtrip tests ─────────────────────────────
@@ -697,9 +668,21 @@ fn test_text_to_image_webhook_url() {
 fn test_avatar_serialize_roundtrip() {
     let json = serde_json::json!({
         "id": "av_123",
+        "status": "READY",
+        "createdAt": "2024-01-01T00:00:00Z",
+        "updatedAt": "2024-01-02T00:00:00Z",
+        "documentIds": [],
         "name": "Test Avatar",
-        "description": "A test avatar",
-        "createdAt": "2024-01-01T00:00:00Z"
+        "personality": "Friendly",
+        "processedImageUri": "https://example.com/processed.png",
+        "referenceImageUri": "https://example.com/reference.png",
+        "startScript": null,
+        "voice": {
+            "type": "runway-live-preset",
+            "presetId": "maya",
+            "name": "Maya",
+            "description": "Warm preset"
+        }
     });
     let avatar: runway_sdk::Avatar = serde_json::from_value(json).unwrap();
     let serialized = serde_json::to_value(&avatar).unwrap();
@@ -711,8 +694,11 @@ fn test_avatar_serialize_roundtrip() {
 fn test_voice_serialize_roundtrip() {
     let json = serde_json::json!({
         "id": "voice_123",
+        "status": "READY",
+        "createdAt": "2024-01-01T00:00:00Z",
         "name": "Test Voice",
-        "description": "A test voice"
+        "description": "A test voice",
+        "previewUrl": "https://example.com/preview.mp3"
     });
     let voice: runway_sdk::Voice = serde_json::from_value(json).unwrap();
     let serialized = serde_json::to_value(&voice).unwrap();
@@ -722,13 +708,27 @@ fn test_voice_serialize_roundtrip() {
 #[test]
 fn test_organization_serialize_roundtrip() {
     let json = serde_json::json!({
-        "id": "org_123",
-        "name": "Test Org",
-        "createdAt": "2024-01-01T00:00:00Z"
+        "creditBalance": 42.5,
+        "tier": {
+            "maxMonthlyCreditSpend": 1000.0,
+            "models": {
+                "gen4.5": {
+                    "maxConcurrentGenerations": 2,
+                    "maxDailyGenerations": 100
+                }
+            }
+        },
+        "usage": {
+            "models": {
+                "gen4.5": {
+                    "dailyGenerations": 12
+                }
+            }
+        }
     });
     let org: runway_sdk::Organization = serde_json::from_value(json).unwrap();
     let serialized = serde_json::to_value(&org).unwrap();
-    assert_eq!(serialized["id"], "org_123");
+    assert_eq!(serialized["creditBalance"], 42.5);
 }
 
 #[test]
@@ -736,7 +736,15 @@ fn test_workflow_serialize_roundtrip() {
     let json = serde_json::json!({
         "id": "wf_123",
         "name": "Test Workflow",
-        "description": "A test workflow"
+        "description": "A test workflow",
+        "createdAt": "2024-01-01T00:00:00Z",
+        "updatedAt": "2024-01-02T00:00:00Z",
+        "version": 3,
+        "graph": {
+            "edges": [],
+            "nodes": [],
+            "version": 1
+        }
     });
     let wf: runway_sdk::Workflow = serde_json::from_value(json).unwrap();
     let serialized = serde_json::to_value(&wf).unwrap();
@@ -776,71 +784,64 @@ fn test_video_ratio_display() {
 
 #[test]
 fn test_task_is_terminal() {
-    let succeeded = Task {
+    let succeeded = Task::Succeeded {
         id: uuid::Uuid::new_v4(),
-        status: TaskStatus::Succeeded,
         created_at: "2024-01-01T00:00:00Z".to_string(),
-        output: Some(vec!["https://example.com/video.mp4".to_string()]),
-        failure: None,
-        failure_code: None,
-        progress: Some(1.0),
+        output: vec!["https://example.com/video.mp4".to_string()],
     };
     assert!(succeeded.is_terminal());
     assert!(succeeded.is_succeeded());
     assert!(!succeeded.is_failed());
+    assert!(!succeeded.is_cancelled());
 
-    let failed = Task {
+    let failed = Task::Failed {
         id: uuid::Uuid::new_v4(),
-        status: TaskStatus::Failed,
         created_at: "2024-01-01T00:00:00Z".to_string(),
-        output: None,
-        failure: Some("Error".to_string()),
+        failure: "Error".to_string(),
         failure_code: Some("ERR".to_string()),
-        progress: None,
     };
     assert!(failed.is_terminal());
     assert!(!failed.is_succeeded());
     assert!(failed.is_failed());
+    assert!(!failed.is_cancelled());
 
-    let running = Task {
+    let cancelled = Task::Cancelled {
         id: uuid::Uuid::new_v4(),
-        status: TaskStatus::Running,
         created_at: "2024-01-01T00:00:00Z".to_string(),
-        output: None,
-        failure: None,
-        failure_code: None,
+    };
+    assert!(cancelled.is_terminal());
+    assert!(!cancelled.is_succeeded());
+    assert!(!cancelled.is_failed());
+    assert!(cancelled.is_cancelled());
+
+    let running = Task::Running {
+        id: uuid::Uuid::new_v4(),
+        created_at: "2024-01-01T00:00:00Z".to_string(),
         progress: Some(0.5),
     };
     assert!(!running.is_terminal());
     assert!(!running.is_succeeded());
     assert!(!running.is_failed());
+    assert!(!running.is_cancelled());
 }
 
 #[test]
 fn test_task_output_urls() {
-    let task_with_output = Task {
+    let task_with_output = Task::Succeeded {
         id: uuid::Uuid::new_v4(),
-        status: TaskStatus::Succeeded,
         created_at: "2024-01-01T00:00:00Z".to_string(),
-        output: Some(vec![
+        output: vec![
             "https://cdn.runway.com/video1.mp4".to_string(),
             "https://cdn.runway.com/video2.mp4".to_string(),
-        ]),
-        failure: None,
-        failure_code: None,
-        progress: Some(1.0),
+        ],
     };
     let urls = task_with_output.output_urls().unwrap();
     assert_eq!(urls.len(), 2);
     assert_eq!(urls[0], "https://cdn.runway.com/video1.mp4");
 
-    let task_no_output = Task {
+    let task_no_output = Task::Running {
         id: uuid::Uuid::new_v4(),
-        status: TaskStatus::Running,
         created_at: "2024-01-01T00:00:00Z".to_string(),
-        output: None,
-        failure: None,
-        failure_code: None,
         progress: Some(0.3),
     };
     assert!(task_no_output.output_urls().is_none());
@@ -868,6 +869,7 @@ fn test_model_enums_eq_and_hash() {
 fn test_task_status_display() {
     assert_eq!(TaskStatus::Pending.to_string(), "PENDING");
     assert_eq!(TaskStatus::Throttled.to_string(), "THROTTLED");
+    assert_eq!(TaskStatus::Cancelled.to_string(), "CANCELLED");
     assert_eq!(TaskStatus::Running.to_string(), "RUNNING");
     assert_eq!(TaskStatus::Succeeded.to_string(), "SUCCEEDED");
     assert_eq!(TaskStatus::Failed.to_string(), "FAILED");
@@ -875,29 +877,21 @@ fn test_task_status_display() {
 
 #[test]
 fn test_generation_request_partial_eq() {
-    let req1 = TextToVideoRequest::new(VideoModel::Gen45, "A sunset")
-        .duration(10)
-        .seed(42);
-    let req2 = TextToVideoRequest::new(VideoModel::Gen45, "A sunset")
-        .duration(10)
-        .seed(42);
+    let req1 = TextToVideoGen45Request::new("A sunset", VideoRatio::Landscape, 10).seed(42);
+    let req2 = TextToVideoGen45Request::new("A sunset", VideoRatio::Landscape, 10).seed(42);
     assert_eq!(req1, req2);
 
-    let req3 = TextToVideoRequest::new(VideoModel::Gen45, "A sunrise");
+    let req3 = TextToVideoGen45Request::new("A sunrise", VideoRatio::Landscape, 10);
     assert_ne!(req1, req3);
 }
 
 #[test]
 fn test_task_partial_eq() {
     let id = uuid::Uuid::parse_str("550e8400-e29b-41d4-a716-446655440000").unwrap();
-    let task1 = Task {
+    let task1 = Task::Succeeded {
         id,
-        status: TaskStatus::Succeeded,
         created_at: "2024-01-01".to_string(),
-        output: Some(vec!["url".to_string()]),
-        failure: None,
-        failure_code: None,
-        progress: Some(1.0),
+        output: vec!["url".to_string()],
     };
     let task2 = task1.clone();
     assert_eq!(task1, task2);

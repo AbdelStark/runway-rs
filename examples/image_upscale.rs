@@ -17,6 +17,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .wait_for_output()
         .await?;
 
-    println!("Upscaled image URL: {}", task.output.unwrap()[0]);
+    println!("Upscaled image URL: {}", task.output_urls().unwrap()[0]);
     Ok(())
 }

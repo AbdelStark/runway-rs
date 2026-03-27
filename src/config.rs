@@ -1,5 +1,9 @@
 use std::time::Duration;
 
+use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
+
+use crate::error::RunwayError;
+
 /// Default Runway API base URL.
 pub const DEFAULT_BASE_URL: &str = "https://api.dev.runwayml.com";
 /// Default API version header value.
@@ -34,6 +38,8 @@ pub struct Config {
     pub max_retries: u32,
     pub poll_interval: Duration,
     pub max_poll_duration: Duration,
+    pub default_headers: HeaderMap,
+    pub default_query: Vec<(String, String)>,
 }
 
 impl Config {
@@ -46,6 +52,8 @@ impl Config {
             max_retries: DEFAULT_MAX_RETRIES,
             poll_interval: DEFAULT_POLL_INTERVAL,
             max_poll_duration: DEFAULT_MAX_POLL_DURATION,
+            default_headers: HeaderMap::new(),
+            default_query: Vec::new(),
         }
     }
 
@@ -78,6 +86,26 @@ impl Config {
         self.max_poll_duration = duration;
         self
     }
+
+    pub fn default_header(
+        mut self,
+        name: impl AsRef<str>,
+        value: impl AsRef<str>,
+    ) -> Result<Self, RunwayError> {
+        let name = HeaderName::try_from(name.as_ref()).map_err(|_| RunwayError::Validation {
+            message: format!("Invalid header name: {}", name.as_ref()),
+        })?;
+        let value = HeaderValue::from_str(value.as_ref()).map_err(|_| RunwayError::Validation {
+            message: format!("Invalid header value for {}", name.as_str()),
+        })?;
+        self.default_headers.insert(name, value);
+        Ok(self)
+    }
+
+    pub fn default_query_param(mut self, key: impl Into<String>, value: impl Into<String>) -> Self {
+        self.default_query.push((key.into(), value.into()));
+        self
+    }
 }
 
 impl std::fmt::Debug for Config {
@@ -90,6 +118,8 @@ impl std::fmt::Debug for Config {
             .field("max_retries", &self.max_retries)
             .field("poll_interval", &self.poll_interval)
             .field("max_poll_duration", &self.max_poll_duration)
+            .field("default_headers", &self.default_headers)
+            .field("default_query", &self.default_query)
             .finish()
     }
 }

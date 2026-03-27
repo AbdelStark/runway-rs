@@ -2,7 +2,9 @@ pub mod avatars;
 pub mod character_performance;
 pub mod documents;
 pub mod image_to_video;
+#[cfg(feature = "unstable-endpoints")]
 pub mod image_upscale;
+#[cfg(feature = "unstable-endpoints")]
 pub mod lip_sync;
 pub mod organization;
 pub mod realtime_sessions;
@@ -24,7 +26,9 @@ pub use avatars::AvatarsResource;
 pub use character_performance::CharacterPerformanceResource;
 pub use documents::DocumentsResource;
 pub use image_to_video::ImageToVideoResource;
+#[cfg(feature = "unstable-endpoints")]
 pub use image_upscale::ImageUpscaleResource;
+#[cfg(feature = "unstable-endpoints")]
 pub use lip_sync::LipSyncResource;
 pub use organization::OrganizationResource;
 pub use realtime_sessions::RealtimeSessionsResource;

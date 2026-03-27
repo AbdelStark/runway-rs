@@ -18,6 +18,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .wait_for_output()
         .await?;
 
-    println!("Lip-synced video URL: {}", task.output.unwrap()[0]);
+    println!("Lip-synced video URL: {}", task.output_urls().unwrap()[0]);
     Ok(())
 }

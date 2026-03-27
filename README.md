@@ -1,6 +1,6 @@
 # runway-rs
 
-Unofficial Rust SDK for the [Runway API](https://docs.dev.runwayml.com/) — async client for AI video, image, and audio generation.
+Unofficial Rust SDK for the [Runway API](https://docs.dev.runwayml.com/), aligned to the official SDK contract for the stable surface and explicit about any unofficial extensions.
 
 [![CI](https://github.com/AbdelStark/runway-rs/actions/workflows/ci.yml/badge.svg)](https://github.com/AbdelStark/runway-rs/actions/workflows/ci.yml)
 [![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%2FApache--2.0-blue.svg)](LICENSE-MIT)
@@ -12,124 +12,196 @@ Unofficial Rust SDK for the [Runway API](https://docs.dev.runwayml.com/) — asy
 runway-sdk = "0.1"
 ```
 
+Enable unofficial extensions only if you need them:
+
+```toml
+[dependencies]
+runway-sdk = { version = "0.1", features = ["unstable-endpoints"] }
+```
+
 ## Quick Start
 
 ```rust
-use runway_sdk::{RunwayClient, TextToVideoRequest, VideoModel};
+use runway_sdk::{RunwayClient, TextToVideoGen45Request, VideoRatio};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let client = RunwayClient::new()?; // reads RUNWAYML_API_SECRET env var
+    let client = RunwayClient::new()?;
 
     let task = client
         .text_to_video()
-        .create(TextToVideoRequest::new(VideoModel::Gen45, "A serene mountain at sunrise"))
+        .create(TextToVideoGen45Request::new(
+            "A serene mountain at sunrise",
+            VideoRatio::Landscape,
+            5,
+        ))
         .await?
         .wait_for_output()
         .await?;
 
-    println!("Video URL: {}", task.output.unwrap()[0]);
+    println!("Video URL: {}", task.output_urls().unwrap()[0]);
     Ok(())
 }
 ```
 
-## Authentication
+## Authentication And Configuration
 
-Set the `RUNWAYML_API_SECRET` environment variable, or pass the key explicitly:
+Set `RUNWAYML_API_SECRET`, or pass the key explicitly:
 
 ```rust
-let client = RunwayClient::with_api_key("your-api-key")?;
+let client = runway_sdk::RunwayClient::with_api_key("your-api-key")?;
 ```
 
-For full control over timeouts, retries, and polling behavior:
+Use [`Config`](src/config.rs) for client-wide defaults:
 
 ```rust
-use runway_sdk::Config;
+use runway_sdk::{Config, RunwayClient};
 use std::time::Duration;
 
 let config = Config::new("your-api-key")
     .timeout(Duration::from_secs(120))
     .max_retries(5)
-    .poll_interval(Duration::from_secs(10));
+    .poll_interval(Duration::from_secs(5));
 
 let client = RunwayClient::with_config(config)?;
 ```
 
-## API Coverage
+## Stable API Coverage
 
-### Generation (Task-based)
+### Generation Resources
 
-All generation methods return a `PendingTask` that can be polled or streamed:
+All stable generation endpoints return a `PendingTask`.
 
-| Method | Endpoint | Usage |
-|--------|----------|-------|
-| Text to Video | `POST /v1/text_to_video` | `client.text_to_video().create(req)` |
-| Image to Video | `POST /v1/image_to_video` | `client.image_to_video().create(req)` |
-| Video to Video | `POST /v1/video_to_video` | `client.video_to_video().create(req)` |
-| Text to Image | `POST /v1/text_to_image` | `client.text_to_image().create(req)` |
-| Character Performance | `POST /v1/character_performance` | `client.character_performance().create(req)` |
-| Sound Effect | `POST /v1/sound_effect` | `client.sound_effect().create(req)` |
-| Text to Speech | `POST /v1/text_to_speech` | `client.text_to_speech().create(req)` |
-| Speech to Speech | `POST /v1/speech_to_speech` | `client.speech_to_speech().create(req)` |
-| Voice Dubbing | `POST /v1/voice_dubbing` | `client.voice_dubbing().create(req)` |
-| Voice Isolation | `POST /v1/voice_isolation` | `client.voice_isolation().create(req)` |
+| Resource | Endpoint |
+|----------|----------|
+| `text_to_video()` | `POST /v1/text_to_video` |
+| `image_to_video()` | `POST /v1/image_to_video` |
+| `video_to_video()` | `POST /v1/video_to_video` |
+| `text_to_image()` | `POST /v1/text_to_image` |
+| `character_performance()` | `POST /v1/character_performance` |
+| `sound_effect()` | `POST /v1/sound_effect` |
+| `text_to_speech()` | `POST /v1/text_to_speech` |
+| `speech_to_speech()` | `POST /v1/speech_to_speech` |
+| `voice_dubbing()` | `POST /v1/voice_dubbing` |
+| `voice_isolation()` | `POST /v1/voice_isolation` |
+
+Request bodies are model-specific. For example:
+
+- `TextToVideoGen45Request`
+- `ImageToVideoGen4TurboRequest`
+- `TextToImageGen4ImageTurboRequest`
+- `VideoToVideoRequest`
 
 ### Management Resources
 
-| Resource | Operations |
-|----------|------------|
-| Tasks | `get`, `delete` |
-| Uploads | `create` |
-| Avatars | `list`, `get`, `create`, `update`, `delete` |
-| Documents | `list`, `get`, `create`, `update`, `delete` |
-| Voices | `list`, `get`, `create`, `delete`, `preview` |
-| Workflows | `list`, `get`, `run` |
-| Workflow Invocations | `get` |
-| Realtime Sessions | `create`, `get`, `cancel` |
-| Organization | `get`, `usage` |
+| Resource | Stable methods |
+|----------|----------------|
+| `tasks()` | `retrieve`, `delete` |
+| `uploads()` | `create_ephemeral`, `upload_file` |
+| `avatars()` | `list`, `retrieve`, `create`, `update`, `delete` |
+| `documents()` | `list`, `retrieve`, `create`, `update`, `delete` |
+| `voices()` | `list`, `retrieve`, `create`, `delete`, `preview` |
+| `workflows()` | `list`, `retrieve`, `run`, `run_pending` |
+| `workflow_invocations()` | `retrieve`, `pending` |
+| `realtime_sessions()` | `create`, `retrieve`, `cancel` |
+| `organization()` | `retrieve`, `retrieve_usage` |
 
-## Task Polling
+Deprecated-style aliases such as `get()` remain temporarily where needed, but docs use the stable names only.
 
-Generation endpoints return a `PendingTask`. Poll until completion or stream status updates:
+## Per-Request Options
+
+The runtime supports per-request headers, query params, timeout overrides, retry overrides, idempotency keys, and base URL overrides.
 
 ```rust
-// Wait for completion (blocking poll)
-let task = pending_task.wait_for_output().await?;
+use runway_sdk::{RequestOptions, RunwayClient, TextToVideoGen45Request, VideoRatio};
+use std::time::Duration;
 
-// Or stream status updates
-use futures::StreamExt;
-let mut stream = pending_task.stream_status();
-while let Some(update) = stream.next().await {
-    let task = update?;
-    println!("Status: {:?}, Progress: {:?}", task.status, task.progress);
-}
+let client = RunwayClient::new()?;
+let request = TextToVideoGen45Request::new(
+    "A cinematic drone shot over a glacier",
+    VideoRatio::Landscape,
+    5,
+);
+
+let response = client
+    .text_to_video()
+    .create_with_options(
+        request,
+        RequestOptions::new()
+            .timeout(Duration::from_secs(90))
+            .idempotency_key("job-123"),
+    )
+    .await?;
+
+println!("HTTP status: {}", response.response.status);
+println!("Task id: {}", response.data.id());
 ```
+
+## Polling
+
+Task and workflow polling both support timeout and cancellation controls.
+
+```rust
+use runway_sdk::{RunwayClient, TextToVideoGen45Request, VideoRatio, WaitOptions};
+use std::time::Duration;
+
+let client = RunwayClient::new()?;
+let pending = client
+    .text_to_video()
+    .create(TextToVideoGen45Request::new(
+        "A cat running through fresh snow",
+        VideoRatio::Landscape,
+        5,
+    ))
+    .await?;
+
+let task = pending
+    .wait_with_options(WaitOptions::default().timeout(Duration::from_secs(300)))
+    .await?;
+
+println!("{}", task.output_urls().unwrap()[0]);
+```
+
+## Unofficial Extensions
+
+The default crate surface tracks the official SDK contract. Unofficial endpoints are behind the `unstable-endpoints` feature:
+
+- `lip_sync()`
+- `image_upscale()`
+- task `list`, `list_stream`, `list_all`, and `cancel`
+
+Examples that depend on these extensions require the feature:
+
+```sh
+cargo run --example lip_sync --features unstable-endpoints
+cargo run --example image_upscale --features unstable-endpoints
+cargo run --example list_tasks --features unstable-endpoints
+```
+
+## Error Handling
+
+All operations return `Result<T, RunwayError>`. The error type includes:
+
+- typed API failures via `RunwayError::Api { status, kind, message, code, .. }`
+- `RunwayError::RateLimited { retry_after, .. }`
+- task and workflow terminal failures
+- connection, timeout, abort, JSON, and IO errors
+- local contract validation errors before a request is sent
 
 ## Examples
 
-See the [`examples/`](examples/) directory:
+Stable examples:
 
 ```sh
 export RUNWAYML_API_SECRET=your_key
 cargo run --example text_to_video
 cargo run --example image_to_video
-cargo run --example video_to_video
-cargo run --example avatars
+cargo run --example text_to_image
+cargo run --example uploads
 cargo run --example workflows
-cargo run --example poll_task
 ```
 
-## Error Handling
-
-All operations return `Result<T, RunwayError>`. Error variants include:
-
-- `Api` — non-2xx response with status code and message
-- `TaskFailed` — generation task failed with failure code
-- `RateLimited` — HTTP 429 (retried automatically up to `max_retries`)
-- `Timeout` — polling exceeded `max_poll_duration`
-- `Unauthorized` — invalid or missing API key
-- `Validation` — invalid input
-- `Http`, `Json`, `Io` — transport and serialization errors
+See [`examples/`](examples/) for the full set.
 
 ## License
 

@@ -1,5 +1,4 @@
-use futures::StreamExt;
-use runway_sdk::{RunwayClient, TextToVideoRequest, VideoModel};
+use runway_sdk::{RunwayClient, TextToVideoGen45Request, VideoRatio};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -7,27 +6,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let pending = client
         .text_to_video()
-        .create(TextToVideoRequest::new(
-            VideoModel::Gen45,
-            "A cat playing piano in a jazz club",
+        .create(TextToVideoGen45Request::new(
+            "A neon-lit alley in the rain",
+            VideoRatio::Landscape,
+            5,
         ))
         .await?;
 
     println!("Task ID: {}", pending.id());
 
-    // Stream status updates
-    let mut stream = std::pin::pin!(pending.stream_status());
-    while let Some(result) = stream.next().await {
-        let task = result?;
-        println!("Status: {:?}, Progress: {:?}", task.status, task.progress);
-
-        if let Some(output) = task.output {
-            println!("Output URLs:");
-            for url in output {
-                println!("  {}", url);
-            }
-        }
-    }
-
+    let task = pending.wait_for_output().await?;
+    println!("Output URL: {}", task.output_urls().unwrap()[0]);
     Ok(())
 }

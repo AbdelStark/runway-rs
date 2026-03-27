@@ -1,4 +1,4 @@
-use runway_sdk::{MediaInput, RunwayClient, VoiceIsolationRequest};
+use runway_sdk::{RunwayClient, VoiceIsolationRequest};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -6,13 +6,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let task = client
         .voice_isolation()
-        .create(VoiceIsolationRequest::new(MediaInput::from_url(
-            "https://example.com/noisy_recording.wav",
-        )))
+        .create(VoiceIsolationRequest::new(
+            "https://example.com/noisy-recording.wav",
+        ))
         .await?
         .wait_for_output()
         .await?;
 
-    println!("Isolated voice URL: {}", task.output.unwrap()[0]);
+    println!("Isolated audio URL: {}", task.output_urls().unwrap()[0]);
     Ok(())
 }

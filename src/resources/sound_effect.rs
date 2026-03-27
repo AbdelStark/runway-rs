@@ -1,4 +1,4 @@
-use crate::client::RunwayClient;
+use crate::client::{RequestOptions, RunwayClient, WithResponse};
 use crate::error::RunwayError;
 use crate::polling::PendingTask;
 use crate::types::generation::SoundEffectRequest;
@@ -10,7 +10,25 @@ pub struct SoundEffectResource {
 
 impl SoundEffectResource {
     pub async fn create(&self, request: SoundEffectRequest) -> Result<PendingTask, RunwayError> {
-        let resp: TaskCreateResponse = self.client.post("/v1/sound_effect", &request).await?;
-        Ok(PendingTask::new(self.client.clone(), resp.id))
+        Ok(self
+            .create_with_options(request, RequestOptions::default())
+            .await?
+            .data)
+    }
+
+    pub async fn create_with_options(
+        &self,
+        request: SoundEffectRequest,
+        options: RequestOptions,
+    ) -> Result<WithResponse<PendingTask>, RunwayError> {
+        request.validate()?;
+        let response: WithResponse<TaskCreateResponse> = self
+            .client
+            .post_with_options("/v1/sound_effect", &request, &options)
+            .await?;
+        Ok(WithResponse {
+            data: PendingTask::new(self.client.clone(), response.data.id),
+            response: response.response,
+        })
     }
 }

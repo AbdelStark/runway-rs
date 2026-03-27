@@ -1,4 +1,4 @@
-use runway_sdk::{MediaInput, RunwayClient, VoiceDubbingRequest};
+use runway_sdk::{RunwayClient, VoiceDubbingLanguage, VoiceDubbingRequest};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -6,16 +6,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let task = client
         .voice_dubbing()
-        .create(
-            VoiceDubbingRequest::new(MediaInput::from_url(
-                "https://example.com/english_speech.mp3",
-            ))
-            .target_language("es"),
-        )
+        .create(VoiceDubbingRequest::new(
+            "https://example.com/english-speech.mp3",
+            VoiceDubbingLanguage::Es,
+        ))
         .await?
         .wait_for_output()
         .await?;
 
-    println!("Dubbed audio URL: {}", task.output.unwrap()[0]);
+    println!("Dubbed audio URL: {}", task.output_urls().unwrap()[0]);
     Ok(())
 }

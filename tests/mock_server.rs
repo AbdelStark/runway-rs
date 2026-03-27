@@ -30,9 +30,10 @@ async fn test_text_to_video_create() {
 
     let pending = client
         .text_to_video()
-        .create(TextToVideoRequest::new(
-            VideoModel::Gen45,
+        .create(TextToVideoGen45Request::new(
             "A cat on a skateboard",
+            VideoRatio::Landscape,
+            5,
         ))
         .await
         .unwrap();
@@ -60,11 +61,10 @@ async fn test_image_to_video_create() {
 
     let pending = client
         .image_to_video()
-        .create(ImageToVideoRequest::new(
-            VideoModel::Gen4Turbo,
-            "Zoom in",
-            MediaInput::from_url("https://example.com/img.jpg"),
-        ))
+        .create(
+            ImageToVideoGen4TurboRequest::new("https://example.com/img.jpg", VideoRatio::Landscape)
+                .prompt_text("Zoom in"),
+        )
         .await
         .unwrap();
 
@@ -93,9 +93,9 @@ async fn test_get_task() {
     let client = RunwayClient::with_config(test_config(&mock_server.uri())).unwrap();
     let task_id = uuid::Uuid::parse_str("550e8400-e29b-41d4-a716-446655440000").unwrap();
 
-    let task = client.tasks().get(task_id).await.unwrap();
-    assert_eq!(task.status, TaskStatus::Running);
-    assert_eq!(task.progress, Some(0.5));
+    let task = client.tasks().retrieve(task_id).await.unwrap();
+    assert_eq!(task.status(), TaskStatus::Running);
+    assert_eq!(task.progress(), Some(0.5));
 }
 
 #[tokio::test]
@@ -129,7 +129,7 @@ async fn test_unauthorized_error() {
     let client = RunwayClient::with_config(test_config(&mock_server.uri())).unwrap();
     let task_id = uuid::Uuid::parse_str("550e8400-e29b-41d4-a716-446655440000").unwrap();
 
-    let result = client.tasks().get(task_id).await;
+    let result = client.tasks().retrieve(task_id).await;
     assert!(matches!(result, Err(RunwayError::Unauthorized)));
 }
 
@@ -150,7 +150,11 @@ async fn test_api_error() {
 
     let result = client
         .text_to_video()
-        .create(TextToVideoRequest::new(VideoModel::Gen45, "test prompt"))
+        .create(TextToVideoGen45Request::new(
+            "test prompt",
+            VideoRatio::Landscape,
+            5,
+        ))
         .await;
 
     match result {
@@ -184,7 +188,11 @@ async fn test_rate_limit_retry() {
 
     let pending = client
         .text_to_video()
-        .create(TextToVideoRequest::new(VideoModel::Gen45, "test prompt"))
+        .create(TextToVideoGen45Request::new(
+            "test prompt",
+            VideoRatio::Landscape,
+            5,
+        ))
         .await
         .unwrap();
 
@@ -195,24 +203,46 @@ async fn test_rate_limit_retry() {
 }
 
 #[tokio::test]
-async fn test_upload_create() {
+async fn test_upload_create_ephemeral() {
     let mock_server = MockServer::start().await;
+    let presigned_url = format!("{}/presigned-upload", mock_server.uri());
 
     Mock::given(method("POST"))
         .and(path("/v1/uploads"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-            "id": "upload-123",
-            "uploadUrl": "https://presigned.example.com/upload"
+        .and(body_json(serde_json::json!({
+            "filename": "test.jpg",
+            "type": "ephemeral"
         })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "runwayUri": "runway://upload-123",
+            "uploadUrl": presigned_url,
+            "fields": {
+                "key": "uploads/test.jpg",
+                "policy": "signed-policy"
+            }
+        })))
+        .expect(1)
+        .mount(&mock_server)
+        .await;
+
+    Mock::given(method("POST"))
+        .and(path("/presigned-upload"))
+        .respond_with(ResponseTemplate::new(204))
         .expect(1)
         .mount(&mock_server)
         .await;
 
     let client = RunwayClient::with_config(test_config(&mock_server.uri())).unwrap();
 
-    let resp = client.uploads().create("test.jpg").await.unwrap();
-    assert_eq!(resp.id, "upload-123");
-    assert_eq!(resp.upload_url, "https://presigned.example.com/upload");
+    let resp = client
+        .uploads()
+        .create_ephemeral(
+            CreateEphemeralUploadRequest::new("test.jpg", b"image-bytes".to_vec())
+                .content_type("image/jpeg"),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.uri, "runway://upload-123");
 }
 
 #[tokio::test]
@@ -222,10 +252,46 @@ async fn test_avatars_list() {
     Mock::given(method("GET"))
         .and(path("/v1/avatars"))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-            "avatars": [
-                {"id": "av-1", "name": "Avatar One"},
-                {"id": "av-2", "name": "Avatar Two"}
-            ]
+            "data": [
+                {
+                    "id": "av-1",
+                    "status": "READY",
+                    "createdAt": "2024-01-01T00:00:00Z",
+                    "updatedAt": "2024-01-02T00:00:00Z",
+                    "documentIds": [],
+                    "name": "Avatar One",
+                    "personality": "Helpful support agent",
+                    "processedImageUri": "https://cdn.runway.com/processed-1.jpg",
+                    "referenceImageUri": "https://cdn.runway.com/reference-1.jpg",
+                    "startScript": null,
+                    "voice": {
+                        "type": "runway-live-preset",
+                        "presetId": "adrian",
+                        "name": "Adrian",
+                        "description": "Warm and clear"
+                    }
+                },
+                {
+                    "id": "av-2",
+                    "status": "PROCESSING",
+                    "createdAt": "2024-01-03T00:00:00Z",
+                    "updatedAt": "2024-01-03T00:00:00Z",
+                    "documentIds": ["doc-1"],
+                    "name": "Avatar Two",
+                    "personality": "Energetic presenter",
+                    "processedImageUri": null,
+                    "referenceImageUri": "https://cdn.runway.com/reference-2.jpg",
+                    "startScript": "Hi there",
+                    "voice": {
+                        "type": "custom",
+                        "id": "voice-1",
+                        "deleted": false,
+                        "name": "Custom Voice",
+                        "description": "Expressive"
+                    }
+                }
+            ],
+            "nextCursor": "cursor-2"
         })))
         .expect(1)
         .mount(&mock_server)
@@ -233,9 +299,10 @@ async fn test_avatars_list() {
 
     let client = RunwayClient::with_config(test_config(&mock_server.uri())).unwrap();
 
-    let list = client.avatars().list().await.unwrap();
-    assert_eq!(list.avatars.len(), 2);
-    assert_eq!(list.avatars[0].name, "Avatar One");
+    let list = client.avatars().list(CursorPageQuery::new()).await.unwrap();
+    assert_eq!(list.data.len(), 2);
+    assert_eq!(list.data[0].name(), "Avatar One");
+    assert_eq!(list.next_cursor.as_deref(), Some("cursor-2"));
 }
 
 // ── Document CRUD tests ──────────────────────────────────────────────────
@@ -247,9 +314,23 @@ async fn test_documents_list() {
     Mock::given(method("GET"))
         .and(path("/v1/documents"))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-            "documents": [
-                {"id": "doc-1", "name": "Design Brief"},
-                {"id": "doc-2", "name": "Script Draft"}
+            "data": [
+                {
+                    "id": "doc-1",
+                    "createdAt": "2024-01-01T00:00:00Z",
+                    "name": "Design Brief",
+                    "type": "text",
+                    "updatedAt": "2024-01-02T00:00:00Z",
+                    "usedBy": []
+                },
+                {
+                    "id": "doc-2",
+                    "createdAt": "2024-01-03T00:00:00Z",
+                    "name": "Script Draft",
+                    "type": "file",
+                    "updatedAt": "2024-01-04T00:00:00Z",
+                    "usedBy": []
+                }
             ]
         })))
         .expect(1)
@@ -257,9 +338,13 @@ async fn test_documents_list() {
         .await;
 
     let client = RunwayClient::with_config(test_config(&mock_server.uri())).unwrap();
-    let list = client.documents().list().await.unwrap();
-    assert_eq!(list.documents.len(), 2);
-    assert_eq!(list.documents[0].name, "Design Brief");
+    let list = client
+        .documents()
+        .list(CursorPageQuery::new())
+        .await
+        .unwrap();
+    assert_eq!(list.data.len(), 2);
+    assert_eq!(list.data[0].name, "Design Brief");
 }
 
 #[tokio::test]
@@ -270,7 +355,12 @@ async fn test_documents_create() {
         .and(path("/v1/documents"))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
             "id": "doc-new",
-            "name": "New Doc"
+            "content": "body",
+            "createdAt": "2024-01-01T00:00:00Z",
+            "name": "New Doc",
+            "type": "text",
+            "updatedAt": "2024-01-01T00:00:00Z",
+            "usedBy": []
         })))
         .expect(1)
         .mount(&mock_server)
@@ -279,7 +369,7 @@ async fn test_documents_create() {
     let client = RunwayClient::with_config(test_config(&mock_server.uri())).unwrap();
     let doc = client
         .documents()
-        .create(CreateDocumentRequest::new("New Doc").content("body"))
+        .create(CreateDocumentRequest::new("New Doc", "body"))
         .await
         .unwrap();
     assert_eq!(doc.id, "doc-new");
@@ -292,21 +382,17 @@ async fn test_documents_update() {
 
     Mock::given(method("PATCH"))
         .and(path("/v1/documents/doc-1"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-            "id": "doc-1",
-            "name": "Updated Name"
-        })))
+        .respond_with(ResponseTemplate::new(204))
         .expect(1)
         .mount(&mock_server)
         .await;
 
     let client = RunwayClient::with_config(test_config(&mock_server.uri())).unwrap();
-    let doc = client
+    client
         .documents()
         .update("doc-1", UpdateDocumentRequest::new().name("Updated Name"))
         .await
         .unwrap();
-    assert_eq!(doc.name, "Updated Name");
 }
 
 #[tokio::test]
@@ -333,9 +419,22 @@ async fn test_voices_list() {
     Mock::given(method("GET"))
         .and(path("/v1/voices"))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-            "voices": [
-                {"id": "v-1", "name": "Deep Male"},
-                {"id": "v-2", "name": "Soft Female"}
+            "data": [
+                {
+                    "id": "v-1",
+                    "status": "PROCESSING",
+                    "createdAt": "2024-01-01T00:00:00Z",
+                    "description": "Deep male voice",
+                    "name": "Deep Male"
+                },
+                {
+                    "id": "v-2",
+                    "status": "READY",
+                    "createdAt": "2024-01-02T00:00:00Z",
+                    "description": "Soft female voice",
+                    "name": "Soft Female",
+                    "previewUrl": "https://cdn.runway.com/voice.mp3"
+                }
             ]
         })))
         .expect(1)
@@ -343,9 +442,13 @@ async fn test_voices_list() {
         .await;
 
     let client = RunwayClient::with_config(test_config(&mock_server.uri())).unwrap();
-    let list = client.voices().list().await.unwrap();
-    assert_eq!(list.voices.len(), 2);
-    assert_eq!(list.voices[1].name, "Soft Female");
+    let list = client.voices().list(CursorPageQuery::new()).await.unwrap();
+    assert_eq!(list.data.len(), 2);
+    assert_eq!(list.data[1].id(), "v-2");
+    assert_eq!(
+        list.data[1].preview_url(),
+        Some("https://cdn.runway.com/voice.mp3")
+    );
 }
 
 #[tokio::test]
@@ -355,8 +458,7 @@ async fn test_voices_create() {
     Mock::given(method("POST"))
         .and(path("/v1/voices"))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-            "id": "v-new",
-            "name": "Custom Voice"
+            "id": "v-new"
         })))
         .expect(1)
         .mount(&mock_server)
@@ -365,7 +467,10 @@ async fn test_voices_create() {
     let client = RunwayClient::with_config(test_config(&mock_server.uri())).unwrap();
     let voice = client
         .voices()
-        .create(CreateVoiceRequest::new("Custom Voice"))
+        .create(CreateVoiceRequest::new(
+            "Custom Voice",
+            "Warm, cinematic narrator with confident pacing",
+        ))
         .await
         .unwrap();
     assert_eq!(voice.id, "v-new");
@@ -395,8 +500,23 @@ async fn test_organization_get() {
     Mock::given(method("GET"))
         .and(path("/v1/organization"))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-            "id": "org-123",
-            "name": "My Org"
+            "creditBalance": 1234.5,
+            "tier": {
+                "maxMonthlyCreditSpend": 5000,
+                "models": {
+                    "gen4.5": {
+                        "maxConcurrentGenerations": 4,
+                        "maxDailyGenerations": 100
+                    }
+                }
+            },
+            "usage": {
+                "models": {
+                    "gen4.5": {
+                        "dailyGenerations": 12
+                    }
+                }
+            }
         })))
         .expect(1)
         .mount(&mock_server)
@@ -404,8 +524,9 @@ async fn test_organization_get() {
 
     let client = RunwayClient::with_config(test_config(&mock_server.uri())).unwrap();
     let org = client.organization().get().await.unwrap();
-    assert_eq!(org.id, "org-123");
-    assert_eq!(org.name, "My Org");
+    assert_eq!(org.credit_balance, 1234.5);
+    assert_eq!(org.tier.models["gen4.5"].max_concurrent_generations, 4);
+    assert_eq!(org.usage.models["gen4.5"].daily_generations, 12);
 }
 
 #[tokio::test]
@@ -415,7 +536,18 @@ async fn test_organization_usage() {
     Mock::given(method("POST"))
         .and(path("/v1/organization/usage"))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-            "usage": {"credits": 100}
+            "models": ["gen4.5"],
+            "results": [
+                {
+                    "date": "2024-01-01",
+                    "usedCredits": [
+                        {
+                            "amount": 100,
+                            "model": "gen4.5"
+                        }
+                    ]
+                }
+            ]
         })))
         .expect(1)
         .mount(&mock_server)
@@ -427,7 +559,8 @@ async fn test_organization_usage() {
         .usage(UsageQueryRequest::new().start_date("2024-01-01"))
         .await
         .unwrap();
-    assert!(resp.usage.is_some());
+    assert_eq!(resp.models, vec!["gen4.5"]);
+    assert_eq!(resp.results[0].used_credits[0].amount, 100.0);
 }
 
 // ── Workflow tests ───────────────────────────────────────────────────────
@@ -439,8 +572,17 @@ async fn test_workflows_list() {
     Mock::given(method("GET"))
         .and(path("/v1/workflows"))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-            "workflows": [
-                {"id": "wf-1", "name": "Video Pipeline"}
+            "data": [
+                {
+                    "name": "Video Pipeline",
+                    "versions": [
+                        {
+                            "id": "wf-1",
+                            "createdAt": "2024-01-01T00:00:00Z",
+                            "version": 3
+                        }
+                    ]
+                }
             ]
         })))
         .expect(1)
@@ -449,8 +591,9 @@ async fn test_workflows_list() {
 
     let client = RunwayClient::with_config(test_config(&mock_server.uri())).unwrap();
     let list = client.workflows().list().await.unwrap();
-    assert_eq!(list.workflows.len(), 1);
-    assert_eq!(list.workflows[0].name, "Video Pipeline");
+    assert_eq!(list.data.len(), 1);
+    assert_eq!(list.data[0].name, "Video Pipeline");
+    assert_eq!(list.data[0].versions[0].id, "wf-1");
 }
 
 #[tokio::test]
@@ -471,7 +614,13 @@ async fn test_workflows_run() {
         .workflows()
         .run(
             "wf-1",
-            RunWorkflowRequest::new().param("prompt", serde_json::json!("test")),
+            RunWorkflowRequest::new().node_output(
+                "node-a",
+                "prompt",
+                WorkflowNodeOutputValue::Primitive {
+                    value: PrimitiveNodeValue::from("test"),
+                },
+            ),
         )
         .await
         .unwrap();
@@ -487,8 +636,7 @@ async fn test_realtime_session_create() {
     Mock::given(method("POST"))
         .and(path("/v1/realtime_sessions"))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-            "id": "rs-1",
-            "status": "active"
+            "id": "rs-1"
         })))
         .expect(1)
         .mount(&mock_server)
@@ -497,7 +645,9 @@ async fn test_realtime_session_create() {
     let client = RunwayClient::with_config(test_config(&mock_server.uri())).unwrap();
     let session = client
         .realtime_sessions()
-        .create(CreateRealtimeSessionRequest::new().model("gen4_turbo"))
+        .create(CreateRealtimeSessionRequest::new(
+            RealtimeAvatarInput::custom("avatar-123"),
+        ))
         .await
         .unwrap();
     assert_eq!(session.id, "rs-1");
@@ -528,7 +678,21 @@ async fn test_avatar_create() {
         .and(path("/v1/avatars"))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
             "id": "av-new",
-            "name": "Test Avatar"
+            "status": "READY",
+            "createdAt": "2024-01-01T00:00:00Z",
+            "updatedAt": "2024-01-01T00:00:00Z",
+            "documentIds": [],
+            "name": "Test Avatar",
+            "personality": "Helpful support agent",
+            "processedImageUri": "https://cdn.runway.com/processed.jpg",
+            "referenceImageUri": "https://cdn.runway.com/reference.jpg",
+            "startScript": null,
+            "voice": {
+                "type": "runway-live-preset",
+                "presetId": "adrian",
+                "name": "Adrian",
+                "description": "Warm and clear"
+            }
         })))
         .expect(1)
         .mount(&mock_server)
@@ -537,10 +701,15 @@ async fn test_avatar_create() {
     let client = RunwayClient::with_config(test_config(&mock_server.uri())).unwrap();
     let avatar = client
         .avatars()
-        .create(CreateAvatarRequest::new("Test Avatar"))
+        .create(CreateAvatarRequest::new(
+            "Test Avatar",
+            "Helpful support agent",
+            "https://example.com/reference.jpg",
+            AvatarVoiceInput::runway_live_preset("adrian"),
+        ))
         .await
         .unwrap();
-    assert_eq!(avatar.id, "av-new");
+    assert_eq!(avatar.id(), "av-new");
 }
 
 #[tokio::test]
@@ -551,7 +720,21 @@ async fn test_avatar_update() {
         .and(path("/v1/avatars/av-1"))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
             "id": "av-1",
-            "name": "Renamed"
+            "status": "READY",
+            "createdAt": "2024-01-01T00:00:00Z",
+            "updatedAt": "2024-01-02T00:00:00Z",
+            "documentIds": [],
+            "name": "Renamed",
+            "personality": "Helpful support agent",
+            "processedImageUri": "https://cdn.runway.com/processed.jpg",
+            "referenceImageUri": "https://cdn.runway.com/reference.jpg",
+            "startScript": null,
+            "voice": {
+                "type": "runway-live-preset",
+                "presetId": "adrian",
+                "name": "Adrian",
+                "description": "Warm and clear"
+            }
         })))
         .expect(1)
         .mount(&mock_server)
@@ -563,7 +746,7 @@ async fn test_avatar_update() {
         .update("av-1", UpdateAvatarRequest::new().name("Renamed"))
         .await
         .unwrap();
-    assert_eq!(avatar.name, "Renamed");
+    assert_eq!(avatar.name(), "Renamed");
 }
 
 #[tokio::test]
@@ -600,9 +783,8 @@ async fn test_video_to_video_create() {
     let pending = client
         .video_to_video()
         .create(VideoToVideoRequest::new(
-            VideoModel::Gen45,
             "Transform",
-            MediaInput::from_url("https://example.com/video.mp4"),
+            "https://example.com/video.mp4",
         ))
         .await
         .unwrap();
@@ -628,9 +810,12 @@ async fn test_text_to_image_create() {
     let client = RunwayClient::with_config(test_config(&mock_server.uri())).unwrap();
     let pending = client
         .text_to_image()
-        .create(TextToImageRequest::new(
-            ImageModel::Gen4ImageTurbo,
+        .create(TextToImageGen4ImageTurboRequest::new(
             "A sunset",
+            ImageRatio::Square1024,
+            vec![TextToImageReferenceImage::new(
+                "https://example.com/reference.png",
+            )],
         ))
         .await
         .unwrap();
@@ -684,10 +869,8 @@ async fn test_character_performance_create() {
     let pending = client
         .character_performance()
         .create(CharacterPerformanceRequest::new(
-            VideoModel::Gen4Turbo,
-            "Wave hello",
-            MediaInput::from_url("https://example.com/face.jpg"),
-            MediaInput::from_url("https://example.com/motion.mp4"),
+            CharacterPerformanceCharacter::image("https://example.com/face.jpg"),
+            CharacterPerformanceReference::video("https://example.com/motion.mp4"),
         ))
         .await
         .unwrap();
@@ -713,7 +896,10 @@ async fn test_text_to_speech_create() {
     let client = RunwayClient::with_config(test_config(&mock_server.uri())).unwrap();
     let pending = client
         .text_to_speech()
-        .create(TextToSpeechRequest::new("Hello world").voice_id("v-1"))
+        .create(TextToSpeechRequest::new(
+            "Hello world",
+            RunwayPresetVoice::new(RunwayPresetVoiceId::Maya),
+        ))
         .await
         .unwrap();
     assert_eq!(
@@ -738,9 +924,10 @@ async fn test_speech_to_speech_create() {
     let client = RunwayClient::with_config(test_config(&mock_server.uri())).unwrap();
     let pending = client
         .speech_to_speech()
-        .create(SpeechToSpeechRequest::new(MediaInput::from_url(
-            "https://example.com/audio.wav",
-        )))
+        .create(SpeechToSpeechRequest::new(
+            SpeechToSpeechMedia::audio("https://example.com/audio.wav"),
+            RunwayPresetVoice::new(RunwayPresetVoiceId::Maya),
+        ))
         .await
         .unwrap();
     assert_eq!(
@@ -765,10 +952,10 @@ async fn test_voice_dubbing_create() {
     let client = RunwayClient::with_config(test_config(&mock_server.uri())).unwrap();
     let pending = client
         .voice_dubbing()
-        .create(
-            VoiceDubbingRequest::new(MediaInput::from_url("https://example.com/speech.mp3"))
-                .target_language("es"),
-        )
+        .create(VoiceDubbingRequest::new(
+            "https://example.com/speech.mp3",
+            VoiceDubbingLanguage::Es,
+        ))
         .await
         .unwrap();
     assert_eq!(
@@ -793,9 +980,7 @@ async fn test_voice_isolation_create() {
     let client = RunwayClient::with_config(test_config(&mock_server.uri())).unwrap();
     let pending = client
         .voice_isolation()
-        .create(VoiceIsolationRequest::new(MediaInput::from_url(
-            "https://example.com/noisy.wav",
-        )))
+        .create(VoiceIsolationRequest::new("https://example.com/noisy.wav"))
         .await
         .unwrap();
     assert_eq!(
@@ -814,17 +999,26 @@ async fn test_workflow_invocation_get() {
         .and(path("/v1/workflow_invocations/inv-42"))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
             "id": "inv-42",
-            "status": "completed",
-            "output": {"url": "https://cdn.runway.com/result.mp4"}
+            "status": "SUCCEEDED",
+            "createdAt": "2024-01-01T00:00:00Z",
+            "output": {"video": ["https://cdn.runway.com/result.mp4"]}
         })))
         .expect(1)
         .mount(&mock_server)
         .await;
 
     let client = RunwayClient::with_config(test_config(&mock_server.uri())).unwrap();
-    let inv = client.workflow_invocations().get("inv-42").await.unwrap();
-    assert_eq!(inv.id, "inv-42");
-    assert_eq!(inv.status, Some("completed".into()));
+    let inv = client
+        .workflow_invocations()
+        .retrieve("inv-42")
+        .await
+        .unwrap();
+    assert_eq!(inv.id(), "inv-42");
+    assert_eq!(inv.status(), WorkflowInvocationStatus::Succeeded);
+    assert_eq!(
+        inv.output().unwrap().get("video").unwrap(),
+        &vec!["https://cdn.runway.com/result.mp4".to_string()]
+    );
 }
 
 // ── Upload file full flow test ───────────────────────────────────────────
@@ -837,18 +1031,27 @@ async fn test_upload_file() {
     let presigned_url = format!("{}/presigned-upload", mock_server.uri());
     Mock::given(method("POST"))
         .and(path("/v1/uploads"))
+        .and(body_json(serde_json::json!({
+            "filename": "test-upload.txt",
+            "type": "ephemeral"
+        })))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-            "id": "upload-456",
-            "uploadUrl": presigned_url
+            "runwayUri": "runway://upload-456",
+            "uploadUrl": presigned_url,
+            "fields": {
+                "key": "uploads/test-upload.txt",
+                "policy": "signed-policy"
+            }
         })))
         .expect(1)
         .mount(&mock_server)
         .await;
 
-    // Mock the presigned URL PUT — verify no Authorization header is sent
-    Mock::given(method("PUT"))
+    // Mock the presigned URL POST. The SDK uses an unauthenticated client here so
+    // API credentials are not leaked to third-party storage.
+    Mock::given(method("POST"))
         .and(path("/presigned-upload"))
-        .respond_with(ResponseTemplate::new(200))
+        .respond_with(ResponseTemplate::new(204))
         .expect(1)
         .mount(&mock_server)
         .await;
@@ -953,7 +1156,21 @@ async fn test_patch_rate_limit_retry() {
         .and(path("/v1/avatars/av-1"))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
             "id": "av-1",
-            "name": "Updated"
+            "status": "READY",
+            "createdAt": "2024-01-01T00:00:00Z",
+            "updatedAt": "2024-01-02T00:00:00Z",
+            "documentIds": [],
+            "name": "Updated",
+            "personality": "Helpful support agent",
+            "processedImageUri": "https://cdn.runway.com/processed.jpg",
+            "referenceImageUri": "https://cdn.runway.com/reference.jpg",
+            "startScript": null,
+            "voice": {
+                "type": "runway-live-preset",
+                "presetId": "adrian",
+                "name": "Adrian",
+                "description": "Warm and clear"
+            }
         })))
         .expect(1)
         .mount(&mock_server)
@@ -965,7 +1182,7 @@ async fn test_patch_rate_limit_retry() {
         .update("av-1", UpdateAvatarRequest::new().name("Updated"))
         .await
         .unwrap();
-    assert_eq!(avatar.name, "Updated");
+    assert_eq!(avatar.name(), "Updated");
 }
 
 // ── Rate limit exhaustion test ───────────────────────────────────────────
@@ -977,7 +1194,7 @@ async fn test_rate_limit_exhausted() {
     // Return 429 for every request — exhaust retries
     Mock::given(method("GET"))
         .and(path("/v1/tasks/550e8400-e29b-41d4-a716-446655440000"))
-        .respond_with(ResponseTemplate::new(429).append_header("retry-after", "60"))
+        .respond_with(ResponseTemplate::new(429).append_header("retry-after-ms", "1"))
         .mount(&mock_server)
         .await;
 
@@ -985,7 +1202,7 @@ async fn test_rate_limit_exhausted() {
     let client = RunwayClient::with_config(config).unwrap();
     let task_id = uuid::Uuid::parse_str("550e8400-e29b-41d4-a716-446655440000").unwrap();
 
-    let result = client.tasks().get(task_id).await;
+    let result = client.tasks().retrieve(task_id).await;
     assert!(matches!(result, Err(RunwayError::RateLimited { .. })));
 }
 
@@ -1026,9 +1243,10 @@ async fn test_full_polling_sequence() {
 
     let task = client
         .text_to_video()
-        .create(TextToVideoRequest::new(
-            VideoModel::Gen45,
+        .create(TextToVideoGen45Request::new(
             "A beautiful sunset",
+            VideoRatio::Landscape,
+            5,
         ))
         .await
         .unwrap()
@@ -1036,10 +1254,10 @@ async fn test_full_polling_sequence() {
         .await
         .unwrap();
 
-    assert_eq!(task.status, TaskStatus::Succeeded);
+    assert_eq!(task.status(), TaskStatus::Succeeded);
     assert_eq!(
-        task.output.unwrap(),
-        vec!["https://cdn.runway.com/video.mp4"]
+        task.output_urls().unwrap(),
+        ["https://cdn.runway.com/video.mp4"]
     );
 }
 
@@ -1076,7 +1294,11 @@ async fn test_polling_task_failed() {
 
     let result = client
         .text_to_video()
-        .create(TextToVideoRequest::new(VideoModel::Gen45, "test"))
+        .create(TextToVideoGen45Request::new(
+            "test",
+            VideoRatio::Landscape,
+            5,
+        ))
         .await
         .unwrap()
         .wait_with_config(Duration::from_millis(100), Duration::from_secs(10))
@@ -1087,8 +1309,9 @@ async fn test_polling_task_failed() {
     assert!(err.to_string().contains("Content policy violation"));
 }
 
+#[cfg(feature = "unstable-endpoints")]
 // ── Lip Sync tests ──────────────────────────────────────────────────────
-
+#[cfg(feature = "unstable-endpoints")]
 #[tokio::test]
 async fn test_lip_sync_create() {
     let mock_server = MockServer::start().await;
@@ -1121,6 +1344,7 @@ async fn test_lip_sync_create() {
     );
 }
 
+#[cfg(feature = "unstable-endpoints")]
 #[tokio::test]
 async fn test_lip_sync_create_with_options() {
     let mock_server = MockServer::start().await;
@@ -1156,8 +1380,9 @@ async fn test_lip_sync_create_with_options() {
     );
 }
 
+#[cfg(feature = "unstable-endpoints")]
 // ── Image Upscale tests ─────────────────────────────────────────────────
-
+#[cfg(feature = "unstable-endpoints")]
 #[tokio::test]
 async fn test_image_upscale_create() {
     let mock_server = MockServer::start().await;
@@ -1189,6 +1414,7 @@ async fn test_image_upscale_create() {
     );
 }
 
+#[cfg(feature = "unstable-endpoints")]
 #[tokio::test]
 async fn test_image_upscale_create_with_options() {
     let mock_server = MockServer::start().await;
@@ -1223,8 +1449,9 @@ async fn test_image_upscale_create_with_options() {
     );
 }
 
+#[cfg(feature = "unstable-endpoints")]
 // ── Task List tests ─────────────────────────────────────────────────────
-
+#[cfg(feature = "unstable-endpoints")]
 #[tokio::test]
 async fn test_tasks_list() {
     let mock_server = MockServer::start().await;
@@ -1256,11 +1483,12 @@ async fn test_tasks_list() {
 
     let list = client.tasks().list(TaskListQuery::new()).await.unwrap();
     assert_eq!(list.tasks.len(), 2);
-    assert_eq!(list.tasks[0].status, TaskStatus::Succeeded);
-    assert_eq!(list.tasks[1].status, TaskStatus::Running);
+    assert_eq!(list.tasks[0].status(), TaskStatus::Succeeded);
+    assert_eq!(list.tasks[1].status(), TaskStatus::Running);
     assert_eq!(list.has_more, Some(false));
 }
 
+#[cfg(feature = "unstable-endpoints")]
 #[tokio::test]
 async fn test_tasks_list_with_filters() {
     let mock_server = MockServer::start().await;
@@ -1291,7 +1519,7 @@ async fn test_tasks_list_with_filters() {
         .await
         .unwrap();
     assert_eq!(list.tasks.len(), 1);
-    assert_eq!(list.tasks[0].status, TaskStatus::Running);
+    assert_eq!(list.tasks[0].status(), TaskStatus::Running);
     assert_eq!(list.has_more, Some(true));
 }
 
@@ -1332,7 +1560,11 @@ async fn test_stream_status_succeeds() {
 
     let pending = client
         .text_to_video()
-        .create(TextToVideoRequest::new(VideoModel::Gen45, "test"))
+        .create(TextToVideoGen45Request::new(
+            "test",
+            VideoRatio::Landscape,
+            5,
+        ))
         .await
         .unwrap();
 
@@ -1340,10 +1572,10 @@ async fn test_stream_status_succeeds() {
 
     assert_eq!(updates.len(), 1);
     let task = updates[0].as_ref().unwrap();
-    assert_eq!(task.status, TaskStatus::Succeeded);
+    assert_eq!(task.status(), TaskStatus::Succeeded);
     assert_eq!(
-        task.output.as_ref().unwrap(),
-        &vec!["https://cdn.runway.com/result.mp4"]
+        task.output_urls().unwrap(),
+        ["https://cdn.runway.com/result.mp4"]
     );
 }
 
@@ -1387,8 +1619,8 @@ async fn test_stream_status_failure() {
 
     assert_eq!(updates.len(), 1);
     let task = updates[0].as_ref().unwrap();
-    assert_eq!(task.status, TaskStatus::Failed);
-    assert_eq!(task.failure.as_deref(), Some("Invalid audio format"));
+    assert_eq!(task.status(), TaskStatus::Failed);
+    assert_eq!(task.failure(), Some("Invalid audio format"));
 }
 
 // ── Multi-phase polling test ─────────────────────────────────────────────
@@ -1450,9 +1682,12 @@ async fn test_polling_multi_phase() {
 
     let task = client
         .text_to_image()
-        .create(TextToImageRequest::new(
-            ImageModel::Gen4ImageTurbo,
+        .create(TextToImageGen4ImageTurboRequest::new(
             "A sunset",
+            ImageRatio::Square1024,
+            vec![TextToImageReferenceImage::new(
+                "https://example.com/reference.png",
+            )],
         ))
         .await
         .unwrap()
@@ -1460,10 +1695,10 @@ async fn test_polling_multi_phase() {
         .await
         .unwrap();
 
-    assert_eq!(task.status, TaskStatus::Succeeded);
+    assert_eq!(task.status(), TaskStatus::Succeeded);
     assert_eq!(
-        task.output.unwrap(),
-        vec!["https://cdn.runway.com/image.png"]
+        task.output_urls().unwrap(),
+        ["https://cdn.runway.com/image.png"]
     );
     // Should have polled at least 3 times (PENDING, RUNNING, SUCCEEDED)
     assert!(call_count.load(Ordering::SeqCst) >= 3);
@@ -1504,7 +1739,11 @@ async fn test_polling_timeout() {
 
     let result = client
         .text_to_video()
-        .create(TextToVideoRequest::new(VideoModel::Gen45, "test"))
+        .create(TextToVideoGen45Request::new(
+            "test",
+            VideoRatio::Landscape,
+            5,
+        ))
         .await
         .unwrap()
         .wait_with_config(Duration::from_millis(50), Duration::from_millis(200))
@@ -1548,7 +1787,7 @@ async fn test_server_error_502_retry() {
         .get("550e8400-e29b-41d4-a716-446655440000".parse().unwrap())
         .await
         .unwrap();
-    assert_eq!(task.status, TaskStatus::Succeeded);
+    assert_eq!(task.status(), TaskStatus::Succeeded);
 }
 
 #[tokio::test]
@@ -1577,7 +1816,11 @@ async fn test_server_error_503_retry() {
 
     let pending = client
         .text_to_video()
-        .create(TextToVideoRequest::new(VideoModel::Gen45, "test"))
+        .create(TextToVideoGen45Request::new(
+            "test",
+            VideoRatio::Landscape,
+            5,
+        ))
         .await
         .unwrap();
     assert_eq!(
@@ -1613,11 +1856,11 @@ async fn test_server_error_504_exhausted() {
 async fn test_server_error_500_not_retried() {
     let mock_server = MockServer::start().await;
 
-    // 500 Internal Server Error should NOT be retried (only 502/503/504 are)
+    // 500 Internal Server Error is retryable under the production transport policy.
     Mock::given(method("GET"))
         .and(path("/v1/tasks/550e8400-e29b-41d4-a716-446655440003"))
         .respond_with(ResponseTemplate::new(500).set_body_string("Internal Server Error"))
-        .expect(1)
+        .expect(4)
         .mount(&mock_server)
         .await;
 
@@ -1632,8 +1875,9 @@ async fn test_server_error_500_not_retried() {
     assert!(matches!(result, Err(RunwayError::Api { status: 500, .. })));
 }
 
+#[cfg(feature = "unstable-endpoints")]
 // ── Task cancel test ────────────────────────────────────────────────────
-
+#[cfg(feature = "unstable-endpoints")]
 #[tokio::test]
 async fn test_task_cancel() {
     let mock_server = MockServer::start().await;
@@ -1657,18 +1901,19 @@ async fn test_task_cancel() {
         .unwrap();
 }
 
-// ── Webhook URL integration test ────────────────────────────────────────
+// ── Stable request body integration tests ───────────────────────────────
 
 #[tokio::test]
-async fn test_text_to_video_with_webhook() {
+async fn test_text_to_video_request_body_matches_official_contract() {
     let mock_server = MockServer::start().await;
 
     Mock::given(method("POST"))
         .and(path("/v1/text_to_video"))
         .and(body_json(serde_json::json!({
+            "duration": 5,
             "model": "gen4.5",
             "promptText": "A sunset over the ocean",
-            "webhookUrl": "https://example.com/webhook"
+            "ratio": "1280:720"
         })))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
             "id": "550e8400-e29b-41d4-a716-446655440005"
@@ -1682,10 +1927,11 @@ async fn test_text_to_video_with_webhook() {
 
     let pending = client
         .text_to_video()
-        .create(
-            TextToVideoRequest::new(VideoModel::Gen45, "A sunset over the ocean")
-                .webhook_url("https://example.com/webhook"),
-        )
+        .create(TextToVideoGen45Request::new(
+            "A sunset over the ocean",
+            VideoRatio::Landscape,
+            5,
+        ))
         .await
         .unwrap();
     assert_eq!(
@@ -1695,11 +1941,17 @@ async fn test_text_to_video_with_webhook() {
 }
 
 #[tokio::test]
-async fn test_image_to_video_with_webhook() {
+async fn test_image_to_video_request_body_matches_official_contract() {
     let mock_server = MockServer::start().await;
 
     Mock::given(method("POST"))
         .and(path("/v1/image_to_video"))
+        .and(body_json(serde_json::json!({
+            "model": "gen4_turbo",
+            "promptImage": "https://example.com/cat.png",
+            "promptText": "A cat",
+            "ratio": "1280:720"
+        })))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
             "id": "550e8400-e29b-41d4-a716-446655440006"
         })))
@@ -1713,12 +1965,8 @@ async fn test_image_to_video_with_webhook() {
     let pending = client
         .image_to_video()
         .create(
-            ImageToVideoRequest::new(
-                VideoModel::Gen45,
-                "A cat",
-                MediaInput::from_url("https://example.com/cat.png"),
-            )
-            .webhook_url("https://example.com/webhook"),
+            ImageToVideoGen4TurboRequest::new("https://example.com/cat.png", VideoRatio::Landscape)
+                .prompt_text("A cat"),
         )
         .await
         .unwrap();
@@ -1728,8 +1976,9 @@ async fn test_image_to_video_with_webhook() {
     );
 }
 
+#[cfg(feature = "unstable-endpoints")]
 // ── Pagination stream tests ─────────────────────────────────────────────
-
+#[cfg(feature = "unstable-endpoints")]
 #[tokio::test]
 async fn test_tasks_list_stream_multi_page() {
     let mock_server = MockServer::start().await;
@@ -1743,12 +1992,14 @@ async fn test_tasks_list_stream_multi_page() {
                 {
                     "id": "110e8400-e29b-41d4-a716-446655440001",
                     "status": "SUCCEEDED",
-                    "createdAt": "2024-03-01T00:00:00Z"
+                    "createdAt": "2024-03-01T00:00:00Z",
+                    "output": ["https://cdn.runway.com/video-1.mp4"]
                 },
                 {
                     "id": "110e8400-e29b-41d4-a716-446655440002",
                     "status": "SUCCEEDED",
-                    "createdAt": "2024-03-01T00:01:00Z"
+                    "createdAt": "2024-03-01T00:01:00Z",
+                    "output": ["https://cdn.runway.com/video-2.mp4"]
                 }
             ],
             "hasMore": true
@@ -1794,7 +2045,7 @@ async fn test_tasks_list_stream_multi_page() {
     // Verify all task IDs
     let all_ids: Vec<String> = pages
         .iter()
-        .flat_map(|p| p.tasks.iter().map(|t| t.id.to_string()))
+        .flat_map(|p| p.tasks.iter().map(|t| t.id().to_string()))
         .collect();
     assert_eq!(all_ids.len(), 3);
     assert!(all_ids[0].ends_with("0001"));
@@ -1802,6 +2053,7 @@ async fn test_tasks_list_stream_multi_page() {
     assert!(all_ids[2].ends_with("0003"));
 }
 
+#[cfg(feature = "unstable-endpoints")]
 #[tokio::test]
 async fn test_tasks_list_stream_single_page() {
     let mock_server = MockServer::start().await;
@@ -1836,6 +2088,7 @@ async fn test_tasks_list_stream_single_page() {
     assert_eq!(pages[0].tasks.len(), 1);
 }
 
+#[cfg(feature = "unstable-endpoints")]
 #[tokio::test]
 async fn test_tasks_list_stream_empty() {
     let mock_server = MockServer::start().await;
@@ -1864,6 +2117,7 @@ async fn test_tasks_list_stream_empty() {
     assert_eq!(pages[0].tasks.len(), 0);
 }
 
+#[cfg(feature = "unstable-endpoints")]
 #[tokio::test]
 async fn test_tasks_list_stream_with_status_filter() {
     let mock_server = MockServer::start().await;
@@ -1900,9 +2154,9 @@ async fn test_tasks_list_stream_with_status_filter() {
         .unwrap();
 
     assert_eq!(pages.len(), 1);
-    assert_eq!(pages[0].tasks[0].status, TaskStatus::Failed);
+    assert_eq!(pages[0].tasks[0].status(), TaskStatus::Failed);
     assert_eq!(
-        pages[0].tasks[0].failure.as_deref(),
+        pages[0].tasks[0].failure(),
         Some("Content policy violation")
     );
 }
@@ -1938,6 +2192,7 @@ async fn test_json_error_response_parsing() {
             status,
             message,
             code,
+            ..
         } => {
             assert_eq!(status, 422);
             assert_eq!(message, "The task ID is not valid");
@@ -1974,6 +2229,7 @@ async fn test_json_error_without_error_wrapper() {
             status,
             message,
             code,
+            ..
         } => {
             assert_eq!(status, 400);
             assert_eq!(message, "Missing required field");
@@ -1996,7 +2252,7 @@ async fn test_plain_text_error_response() {
 
     let client = RunwayClient::with_config(
         Config::new("test-api-key-12345")
-            .base_url(&mock_server.uri())
+            .base_url(mock_server.uri())
             .max_retries(0),
     )
     .unwrap();
@@ -2012,6 +2268,7 @@ async fn test_plain_text_error_response() {
             status,
             message,
             code,
+            ..
         } => {
             assert_eq!(status, 500);
             assert_eq!(message, "Internal Server Error");
@@ -2030,11 +2287,12 @@ async fn test_voice_preview() {
     Mock::given(method("POST"))
         .and(path("/v1/voices/preview"))
         .and(body_json(serde_json::json!({
-            "text": "Hello, world!",
-            "voiceId": "voice-123"
+            "model": "eleven_multilingual_ttv_v2",
+            "prompt": "Warm and expressive voice for product demos"
         })))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-            "audioUrl": "https://cdn.runway.com/preview/abc123.mp3"
+            "durationSecs": 3.2,
+            "url": "https://cdn.runway.com/preview/abc123.mp3"
         })))
         .expect(1)
         .mount(&mock_server)
@@ -2044,14 +2302,14 @@ async fn test_voice_preview() {
 
     let resp = client
         .voices()
-        .preview(PreviewVoiceRequest::new("Hello, world!").voice_id("voice-123"))
+        .preview(PreviewVoiceRequest::new(
+            "Warm and expressive voice for product demos",
+        ))
         .await
         .unwrap();
 
-    assert_eq!(
-        resp.audio_url.as_deref(),
-        Some("https://cdn.runway.com/preview/abc123.mp3")
-    );
+    assert_eq!(resp.duration_secs, 3.2);
+    assert_eq!(resp.url, "https://cdn.runway.com/preview/abc123.mp3");
 }
 
 // ── Missing GET single-resource tests ───────────────────────────────────
@@ -2064,9 +2322,12 @@ async fn test_documents_get() {
         .and(path("/v1/documents/doc-abc-123"))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
             "id": "doc-abc-123",
+            "content": "Full document body",
+            "createdAt": "2024-06-15T10:30:00Z",
             "name": "My Document",
-            "description": "A test document",
-            "createdAt": "2024-06-15T10:30:00Z"
+            "type": "text",
+            "updatedAt": "2024-06-16T10:30:00Z",
+            "usedBy": []
         })))
         .expect(1)
         .mount(&mock_server)
@@ -2077,7 +2338,8 @@ async fn test_documents_get() {
 
     assert_eq!(doc.id, "doc-abc-123");
     assert_eq!(doc.name, "My Document");
-    assert_eq!(doc.description.as_deref(), Some("A test document"));
+    assert_eq!(doc.content, "Full document body");
+    assert_eq!(doc.document_type, DocumentType::Text);
 }
 
 #[tokio::test]
@@ -2088,9 +2350,22 @@ async fn test_avatars_get() {
         .and(path("/v1/avatars/avatar-xyz-789"))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
             "id": "avatar-xyz-789",
+            "status": "READY",
+            "createdAt": "2024-07-01T08:00:00Z",
+            "updatedAt": "2024-07-02T08:00:00Z",
+            "documentIds": ["doc-1"],
             "name": "Test Avatar",
-            "description": "An avatar for testing",
-            "createdAt": "2024-07-01T08:00:00Z"
+            "personality": "An avatar for testing",
+            "processedImageUri": "https://cdn.runway.com/processed.jpg",
+            "referenceImageUri": "https://cdn.runway.com/reference.jpg",
+            "startScript": null,
+            "voice": {
+                "type": "custom",
+                "id": "voice-456",
+                "deleted": false,
+                "name": "Deep Voice",
+                "description": "A deep voice clone"
+            }
         })))
         .expect(1)
         .mount(&mock_server)
@@ -2099,9 +2374,9 @@ async fn test_avatars_get() {
     let client = RunwayClient::with_config(test_config(&mock_server.uri())).unwrap();
     let avatar = client.avatars().get("avatar-xyz-789").await.unwrap();
 
-    assert_eq!(avatar.id, "avatar-xyz-789");
-    assert_eq!(avatar.name, "Test Avatar");
-    assert_eq!(avatar.description.as_deref(), Some("An avatar for testing"));
+    assert_eq!(avatar.id(), "avatar-xyz-789");
+    assert_eq!(avatar.name(), "Test Avatar");
+    assert_eq!(avatar.status(), AvatarStatus::Ready);
 }
 
 #[tokio::test]
@@ -2112,9 +2387,11 @@ async fn test_voices_get() {
         .and(path("/v1/voices/voice-456"))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
             "id": "voice-456",
+            "status": "READY",
+            "createdAt": "2024-05-20T14:00:00Z",
             "name": "Deep Voice",
             "description": "A deep voice clone",
-            "createdAt": "2024-05-20T14:00:00Z"
+            "previewUrl": "https://cdn.runway.com/voice-456.mp3"
         })))
         .expect(1)
         .mount(&mock_server)
@@ -2123,9 +2400,12 @@ async fn test_voices_get() {
     let client = RunwayClient::with_config(test_config(&mock_server.uri())).unwrap();
     let voice = client.voices().get("voice-456").await.unwrap();
 
-    assert_eq!(voice.id, "voice-456");
-    assert_eq!(voice.name, "Deep Voice");
-    assert_eq!(voice.description.as_deref(), Some("A deep voice clone"));
+    assert_eq!(voice.id(), "voice-456");
+    assert_eq!(voice.status(), VoiceStatus::Ready);
+    assert_eq!(
+        voice.preview_url(),
+        Some("https://cdn.runway.com/voice-456.mp3")
+    );
 }
 
 #[tokio::test]
@@ -2136,16 +2416,23 @@ async fn test_workflows_get() {
         .and(path("/v1/workflows/wf-001"))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
             "id": "wf-001",
+            "createdAt": "2024-04-10T12:00:00Z",
             "name": "Video Pipeline",
             "description": "End-to-end video generation workflow",
-            "createdAt": "2024-04-10T12:00:00Z"
+            "graph": {
+                "edges": [],
+                "nodes": [],
+                "version": 1
+            },
+            "updatedAt": "2024-04-11T12:00:00Z",
+            "version": 7
         })))
         .expect(1)
         .mount(&mock_server)
         .await;
 
     let client = RunwayClient::with_config(test_config(&mock_server.uri())).unwrap();
-    let workflow = client.workflows().get("wf-001").await.unwrap();
+    let workflow = client.workflows().retrieve("wf-001").await.unwrap();
 
     assert_eq!(workflow.id, "wf-001");
     assert_eq!(workflow.name, "Video Pipeline");
@@ -2163,8 +2450,10 @@ async fn test_realtime_session_get() {
         .and(path("/v1/realtime_sessions/rs-999"))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
             "id": "rs-999",
-            "status": "active",
-            "createdAt": "2024-08-01T16:00:00Z"
+            "status": "READY",
+            "createdAt": "2024-08-01T16:00:00Z",
+            "expiresAt": "2024-08-01T17:00:00Z",
+            "sessionKey": "session-key-123"
         })))
         .expect(1)
         .mount(&mock_server)
@@ -2173,12 +2462,14 @@ async fn test_realtime_session_get() {
     let client = RunwayClient::with_config(test_config(&mock_server.uri())).unwrap();
     let session = client.realtime_sessions().get("rs-999").await.unwrap();
 
-    assert_eq!(session.id, "rs-999");
-    assert_eq!(session.status.as_deref(), Some("active"));
+    assert_eq!(session.id(), "rs-999");
+    assert_eq!(session.status(), RealtimeSessionStatus::Ready);
+    assert_eq!(session.session_key(), Some("session-key-123"));
 }
 
 // ── list_all (flattened pagination) test ────────────────────────────────
 
+#[cfg(feature = "unstable-endpoints")]
 #[tokio::test]
 async fn test_tasks_list_all_flattened() {
     let mock_server = MockServer::start().await;
@@ -2192,7 +2483,8 @@ async fn test_tasks_list_all_flattened() {
                 {
                     "id": "440e8400-e29b-41d4-a716-446655440001",
                     "status": "SUCCEEDED",
-                    "createdAt": "2024-03-01T00:00:00Z"
+                    "createdAt": "2024-03-01T00:00:00Z",
+                    "output": ["https://cdn.runway.com/video-1.mp4"]
                 },
                 {
                     "id": "440e8400-e29b-41d4-a716-446655440002",
@@ -2237,9 +2529,9 @@ async fn test_tasks_list_all_flattened() {
         .unwrap();
 
     assert_eq!(tasks.len(), 3);
-    assert_eq!(tasks[0].status, TaskStatus::Succeeded);
-    assert_eq!(tasks[1].status, TaskStatus::Running);
-    assert_eq!(tasks[1].progress, Some(0.7));
-    assert_eq!(tasks[2].status, TaskStatus::Failed);
-    assert_eq!(tasks[2].failure.as_deref(), Some("Timeout"));
+    assert_eq!(tasks[0].status(), TaskStatus::Succeeded);
+    assert_eq!(tasks[1].status(), TaskStatus::Running);
+    assert_eq!(tasks[1].progress(), Some(0.7));
+    assert_eq!(tasks[2].status(), TaskStatus::Failed);
+    assert_eq!(tasks[2].failure(), Some("Timeout"));
 }
