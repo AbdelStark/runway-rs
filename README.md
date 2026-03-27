@@ -1,210 +1,199 @@
-# runway-rs
+<h1 align="center">runway-rs</h1>
+<p align="center">Typed async Rust client for submitting Runway generations, polling task output, uploading media, and running workflows.</p>
+<p align="center">
+  <a href="https://github.com/AbdelStark/runway-rs/actions/workflows/ci.yml"><img src="https://github.com/AbdelStark/runway-rs/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
+  <img src="https://img.shields.io/badge/rust-2021-orange" alt="Rust 2021" />
+  <img src="https://img.shields.io/badge/tokio-async-1f6feb" alt="Tokio" />
+  <img src="https://img.shields.io/badge/version-0.1.0-7c3aed" alt="Version 0.1.0" />
+  <img src="https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue" alt="License" />
+</p>
+<p align="center">
+  <img src="./docs/screenshot.png" alt="UI Preview or Terminal Output" />
+</p>
 
-Unofficial Rust SDK for the [Runway API](https://docs.dev.runwayml.com/), aligned to the official SDK contract for the stable surface and explicit about any unofficial extensions.
+## How It Works
 
-[![CI](https://github.com/AbdelStark/runway-rs/actions/workflows/ci.yml/badge.svg)](https://github.com/AbdelStark/runway-rs/actions/workflows/ci.yml)
-[![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%2FApache--2.0-blue.svg)](LICENSE-MIT)
-
-## Installation
-
-```toml
-[dependencies]
-runway-sdk = "0.1"
+```mermaid
+flowchart LR
+    App["Your Rust code"] --> Client["RunwayClient"]
+    Client --> Resources["Typed resources<br/>text_to_video · uploads · workflows · organization"]
+    Resources --> Runtime["Config + RequestOptions<br/>timeout · retries · idempotency · headers/query override"]
+    Runtime --> API["Runway API"]
+    API --> Handles["PendingTask / PendingWorkflowInvocation"]
+    Handles --> Poll["wait_for_output() / stream_status()"]
+    Poll --> Output["Typed result<br/>output_urls() · workflow output · response metadata"]
+    Resources -. create_ephemeral() .-> Upload["runway:// URI"]
+    Upload --> API
 ```
 
-Enable unofficial extensions only if you need them:
-
-```toml
-[dependencies]
-runway-sdk = { version = "0.1", features = ["unstable-endpoints"] }
-```
+Read-only endpoints such as `organization()` and `workflows().list()` are safe smoke tests. Billable generations and ephemeral uploads depend on the account permissions and credits attached to your Runway key.
 
 ## Quick Start
+
+1. Clone and build.
+
+```bash
+git clone https://github.com/AbdelStark/runway-rs.git
+cd runway-rs
+cargo build
+```
+
+2. Set your Runway secret.
+
+```bash
+cp .env.example .env
+$EDITOR .env
+```
+
+3. Run the safe smoke test example.
+
+```bash
+set -a; source .env; set +a
+cargo run --example organization
+```
+
+```text
+Credit balance: <number>
+Usage models: <count>
+Usage rows: <count>
+```
+
+## The Good Stuff
+
+### 1. Submit a text-to-video job and wait for the final asset
 
 ```rust
 use runway_sdk::{RunwayClient, TextToVideoGen45Request, VideoRatio};
 
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let client = RunwayClient::new()?;
-
-    let task = client
-        .text_to_video()
-        .create(TextToVideoGen45Request::new(
-            "A serene mountain at sunrise",
-            VideoRatio::Landscape,
-            5,
-        ))
-        .await?
-        .wait_for_output()
-        .await?;
-
-    println!("Video URL: {}", task.output_urls().unwrap()[0]);
-    Ok(())
-}
-```
-
-## Authentication And Configuration
-
-Set `RUNWAYML_API_SECRET`, or pass the key explicitly:
-
-```rust
-let client = runway_sdk::RunwayClient::with_api_key("your-api-key")?;
-```
-
-Use [`Config`](src/config.rs) for client-wide defaults:
-
-```rust
-use runway_sdk::{Config, RunwayClient};
-use std::time::Duration;
-
-let config = Config::new("your-api-key")
-    .timeout(Duration::from_secs(120))
-    .max_retries(5)
-    .poll_interval(Duration::from_secs(5));
-
-let client = RunwayClient::with_config(config)?;
-```
-
-## Stable API Coverage
-
-### Generation Resources
-
-All stable generation endpoints return a `PendingTask`.
-
-| Resource | Endpoint |
-|----------|----------|
-| `text_to_video()` | `POST /v1/text_to_video` |
-| `image_to_video()` | `POST /v1/image_to_video` |
-| `video_to_video()` | `POST /v1/video_to_video` |
-| `text_to_image()` | `POST /v1/text_to_image` |
-| `character_performance()` | `POST /v1/character_performance` |
-| `sound_effect()` | `POST /v1/sound_effect` |
-| `text_to_speech()` | `POST /v1/text_to_speech` |
-| `speech_to_speech()` | `POST /v1/speech_to_speech` |
-| `voice_dubbing()` | `POST /v1/voice_dubbing` |
-| `voice_isolation()` | `POST /v1/voice_isolation` |
-
-Request bodies are model-specific. For example:
-
-- `TextToVideoGen45Request`
-- `ImageToVideoGen4TurboRequest`
-- `TextToImageGen4ImageTurboRequest`
-- `VideoToVideoRequest`
-
-### Management Resources
-
-| Resource | Stable methods |
-|----------|----------------|
-| `tasks()` | `retrieve`, `delete` |
-| `uploads()` | `create_ephemeral`, `upload_file` |
-| `avatars()` | `list`, `retrieve`, `create`, `update`, `delete` |
-| `documents()` | `list`, `retrieve`, `create`, `update`, `delete` |
-| `voices()` | `list`, `retrieve`, `create`, `delete`, `preview` |
-| `workflows()` | `list`, `retrieve`, `run`, `run_pending` |
-| `workflow_invocations()` | `retrieve`, `pending` |
-| `realtime_sessions()` | `create`, `retrieve`, `cancel` |
-| `organization()` | `retrieve`, `retrieve_usage` |
-
-Deprecated-style aliases such as `get()` remain temporarily where needed, but docs use the stable names only.
-
-## Per-Request Options
-
-The runtime supports per-request headers, query params, timeout overrides, retry overrides, idempotency keys, and base URL overrides.
-
-```rust
-use runway_sdk::{RequestOptions, RunwayClient, TextToVideoGen45Request, VideoRatio};
-use std::time::Duration;
-
+# async fn run() -> Result<(), Box<dyn std::error::Error>> {
 let client = RunwayClient::new()?;
-let request = TextToVideoGen45Request::new(
-    "A cinematic drone shot over a glacier",
-    VideoRatio::Landscape,
-    5,
-);
 
-let response = client
-    .text_to_video()
-    .create_with_options(
-        request,
-        RequestOptions::new()
-            .timeout(Duration::from_secs(90))
-            .idempotency_key("job-123"),
-    )
-    .await?;
-
-println!("HTTP status: {}", response.response.status);
-println!("Task id: {}", response.data.id());
-```
-
-## Polling
-
-Task and workflow polling both support timeout and cancellation controls.
-
-```rust
-use runway_sdk::{RunwayClient, TextToVideoGen45Request, VideoRatio, WaitOptions};
-use std::time::Duration;
-
-let client = RunwayClient::new()?;
-let pending = client
+let task = client
     .text_to_video()
     .create(TextToVideoGen45Request::new(
-        "A cat running through fresh snow",
+        "Aerial shot of a glacier at sunrise",
         VideoRatio::Landscape,
         5,
     ))
-    .await?;
-
-let task = pending
-    .wait_with_options(WaitOptions::default().timeout(Duration::from_secs(300)))
+    .await?
+    .wait_for_output()
     .await?;
 
 println!("{}", task.output_urls().unwrap()[0]);
+# Ok(())
+# }
 ```
 
-## Unofficial Extensions
+- `TextToVideoGen45Request` keeps the request model-specific instead of flattening everything into one permissive struct.
+- `VideoRatio::Landscape` maps to `1280:720`.
+- `wait_for_output()` polls until the task reaches `SUCCEEDED`, `FAILED`, or `CANCELLED`.
 
-The default crate surface tracks the official SDK contract. Unofficial endpoints are behind the `unstable-endpoints` feature:
+### 2. Upload bytes once, reuse the returned `runway://` URI
 
-- `lip_sync()`
-- `image_upscale()`
-- task `list`, `list_stream`, `list_all`, and `cancel`
+```rust
+use runway_sdk::{
+    CreateEphemeralUploadRequest, ImageToVideoGen4TurboRequest, RunwayClient, VideoRatio,
+};
 
-Examples that depend on these extensions require the feature:
+# async fn run() -> Result<(), Box<dyn std::error::Error>> {
+let client = RunwayClient::new()?;
+let bytes = std::fs::read("input.png")?;
 
-```sh
-cargo run --example lip_sync --features unstable-endpoints
-cargo run --example image_upscale --features unstable-endpoints
-cargo run --example list_tasks --features unstable-endpoints
+let upload = client
+    .uploads()
+    .create_ephemeral(
+        CreateEphemeralUploadRequest::new("input.png", bytes).content_type("image/png"),
+    )
+    .await?;
+
+let task = client
+    .image_to_video()
+    .create(
+        ImageToVideoGen4TurboRequest::new(upload.uri, VideoRatio::Landscape)
+            .prompt_text("Animate the uploaded image"),
+    )
+    .await?
+    .wait_for_output()
+    .await?;
+
+println!("{}", task.output_urls().unwrap()[0]);
+# Ok(())
+# }
 ```
 
-## Error Handling
+- `create_ephemeral()` performs the official placeholder + multipart upload flow.
+- `upload.uri` is the `runway://...` handle you pass to downstream generation endpoints.
+- This path can be gated by Runway billing rules on unfunded accounts.
 
-All operations return `Result<T, RunwayError>`. The error type includes:
+### 3. Start a workflow without hand-rolling nested JSON
 
-- typed API failures via `RunwayError::Api { status, kind, message, code, .. }`
-- `RunwayError::RateLimited { retry_after, .. }`
-- task and workflow terminal failures
-- connection, timeout, abort, JSON, and IO errors
-- local contract validation errors before a request is sent
+```rust
+use runway_sdk::{PrimitiveNodeValue, RunWorkflowRequest, RunwayClient, WorkflowNodeOutputValue};
 
-## Examples
+# async fn run() -> Result<(), Box<dyn std::error::Error>> {
+let client = RunwayClient::new()?;
+let workflows = client.workflows().list().await?;
 
-Stable examples:
+let version = &workflows.data[0].versions[0];
+let invocation = client
+    .workflows()
+    .run_pending(
+        &version.id,
+        RunWorkflowRequest::new().node_output(
+            "prompt-node",
+            "prompt",
+            WorkflowNodeOutputValue::Primitive {
+                value: PrimitiveNodeValue::from("hello world"),
+            },
+        ),
+    )
+    .await?;
 
-```sh
-export RUNWAYML_API_SECRET=your_key
-cargo run --example text_to_video
-cargo run --example image_to_video
-cargo run --example text_to_image
-cargo run --example uploads
-cargo run --example workflows
+println!("{}", invocation.id());
+# Ok(())
+# }
 ```
 
-See [`examples/`](examples/) for the full set.
+- `node_output()` builds the `nodeOutputs` map with typed values.
+- `run_pending()` returns a `PendingWorkflowInvocation` you can poll just like a generation task.
+- `workflow_invocations().pending(id)` is the direct entry point when you already have an invocation ID.
+
+## Configuration / API
+
+| Knob | Default | Description |
+| --- | --- | --- |
+| `RUNWAYML_API_SECRET` | none | Bearer secret read by `RunwayClient::new()`. |
+| `Config::base_url` | `https://api.dev.runwayml.com` | API host override. |
+| `Config::api_version` | `2024-11-06` | Sent as `X-Runway-Version`. |
+| `Config::timeout` | `300s` | Default HTTP timeout for each request. |
+| `Config::max_retries` | `3` | Retries `408`, `409`, `429`, `5xx`, and retryable transport failures. |
+| `Config::poll_interval` | `5s` | Delay between task and workflow polls. |
+| `Config::max_poll_duration` | `600s` | Max total wait time for `wait_for_output()`. |
+| `RequestOptions` | none | Per-request headers, query params, timeout, retries, idempotency key, and base URL override. |
+| `live-tests` | off | Enables `tests/live_api.rs` for real API smoke tests. |
+| `unstable-endpoints` | off | Enables `lip_sync`, `image_upscale`, and task list/cancel helpers. |
+
+## Deployment / Integration
+
+Run the live smoke suite in GitHub Actions with a real Runway secret:
+
+```yaml
+name: runway-live-smoke
+
+on:
+  workflow_dispatch:
+
+jobs:
+  live:
+    runs-on: ubuntu-latest
+    env:
+      RUNWAYML_API_SECRET: ${{ secrets.RUNWAYML_API_SECRET }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo test --features live-tests --test live_api -- --nocapture --test-threads=1
+```
 
 ## License
 
-Dual-licensed under [MIT](LICENSE-MIT) or [Apache-2.0](LICENSE-APACHE).
-
-Built by [@AbdelStark](https://github.com/AbdelStark) as an open-source contribution to the Runway developer ecosystem.
+MIT or Apache-2.0.
