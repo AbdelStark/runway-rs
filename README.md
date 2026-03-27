@@ -45,19 +45,20 @@ Usage rows: <count>
 ```rust
 use runway_sdk::{RunwayClient, TextToVideoGen45Request, VideoRatio};
 
-async fn run() -> Result<(), Box<dyn std::error::Error>> {
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let client = RunwayClient::new()?;
 
     let task = client
-    .text_to_video()
-    .create(TextToVideoGen45Request::new(
-        "Aerial shot of a glacier at sunrise",
-        VideoRatio::Landscape,
-        5,
-    ))
-    .await?
-    .wait_for_output()
-    .await?;
+        .text_to_video()
+        .create(TextToVideoGen45Request::new(
+            "Aerial shot of a glacier at sunrise",
+            VideoRatio::Landscape,
+            5,
+        ))
+        .await?
+        .wait_for_output()
+        .await?;
 
     println!("{}", task.output_urls().unwrap()[0]);
     Ok(())
@@ -75,30 +76,31 @@ use runway_sdk::{
     CreateEphemeralUploadRequest, ImageToVideoGen4TurboRequest, RunwayClient, VideoRatio,
 };
 
-# async fn run() -> Result<(), Box<dyn std::error::Error>> {
-let client = RunwayClient::new()?;
-let bytes = std::fs::read("input.png")?;
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let client = RunwayClient::new()?;
+    let bytes = std::fs::read("input.png")?;
 
-let upload = client
-    .uploads()
-    .create_ephemeral(
-        CreateEphemeralUploadRequest::new("input.png", bytes).content_type("image/png"),
-    )
-    .await?;
+    let upload = client
+        .uploads()
+        .create_ephemeral(
+            CreateEphemeralUploadRequest::new("input.png", bytes).content_type("image/png"),
+        )
+        .await?;
 
-let task = client
-    .image_to_video()
-    .create(
-        ImageToVideoGen4TurboRequest::new(upload.uri, VideoRatio::Landscape)
-            .prompt_text("Animate the uploaded image"),
-    )
-    .await?
-    .wait_for_output()
-    .await?;
+    let task = client
+        .image_to_video()
+        .create(
+            ImageToVideoGen4TurboRequest::new(upload.uri, VideoRatio::Landscape)
+                .prompt_text("Animate the uploaded image"),
+        )
+        .await?
+        .wait_for_output()
+        .await?;
 
-println!("{}", task.output_urls().unwrap()[0]);
-# Ok(())
-# }
+    println!("{}", task.output_urls().unwrap()[0]);
+    Ok(())
+}
 ```
 
 - `create_ephemeral()` performs the official placeholder + multipart upload flow.
@@ -110,28 +112,29 @@ println!("{}", task.output_urls().unwrap()[0]);
 ```rust
 use runway_sdk::{PrimitiveNodeValue, RunWorkflowRequest, RunwayClient, WorkflowNodeOutputValue};
 
-# async fn run() -> Result<(), Box<dyn std::error::Error>> {
-let client = RunwayClient::new()?;
-let workflows = client.workflows().list().await?;
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let client = RunwayClient::new()?;
+    let workflows = client.workflows().list().await?;
 
-let version = &workflows.data[0].versions[0];
-let invocation = client
-    .workflows()
-    .run_pending(
-        &version.id,
-        RunWorkflowRequest::new().node_output(
-            "prompt-node",
-            "prompt",
-            WorkflowNodeOutputValue::Primitive {
-                value: PrimitiveNodeValue::from("hello world"),
-            },
-        ),
-    )
-    .await?;
+    let version = &workflows.data[0].versions[0];
+    let invocation = client
+        .workflows()
+        .run_pending(
+            &version.id,
+            RunWorkflowRequest::new().node_output(
+                "prompt-node",
+                "prompt",
+                WorkflowNodeOutputValue::Primitive {
+                    value: PrimitiveNodeValue::from("hello world"),
+                },
+            ),
+        )
+        .await?;
 
-println!("{}", invocation.id());
-# Ok(())
-# }
+    println!("{}", invocation.id());
+    Ok(())
+}
 ```
 
 - `node_output()` builds the `nodeOutputs` map with typed values.
@@ -176,4 +179,4 @@ jobs:
 
 ## License
 
-MIT or Apache-2.0.
+[MIT](./LICENSE-MIT) or [Apache-2.0](./LICENSE-APACHE).
