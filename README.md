@@ -7,9 +7,6 @@
   <img src="https://img.shields.io/badge/version-0.1.0-7c3aed" alt="Version 0.1.0" />
   <img src="https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue" alt="License" />
 </p>
-<p align="center">
-  <img src="./docs/screenshot.png" alt="UI Preview or Terminal Output" />
-</p>
 
 ## How It Works
 
