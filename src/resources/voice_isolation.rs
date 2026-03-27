@@ -9,12 +9,8 @@ pub struct VoiceIsolationResource {
 }
 
 impl VoiceIsolationResource {
-    pub async fn create(
-        &self,
-        request: VoiceIsolationRequest,
-    ) -> Result<PendingTask, RunwayError> {
-        let resp: TaskCreateResponse =
-            self.client.post("/v1/voice_isolation", &request).await?;
+    pub async fn create(&self, request: VoiceIsolationRequest) -> Result<PendingTask, RunwayError> {
+        let resp: TaskCreateResponse = self.client.post("/v1/voice_isolation", &request).await?;
         Ok(PendingTask::new(self.client.clone(), resp.id))
     }
 }

@@ -19,10 +19,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut stream = std::pin::pin!(pending.stream_status());
     while let Some(result) = stream.next().await {
         let task = result?;
-        println!(
-            "Status: {:?}, Progress: {:?}",
-            task.status, task.progress
-        );
+        println!("Status: {:?}, Progress: {:?}", task.status, task.progress);
 
         if let Some(output) = task.output {
             println!("Output URLs:");

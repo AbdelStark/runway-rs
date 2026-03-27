@@ -1,6 +1,10 @@
 use std::time::Duration;
 use uuid::Uuid;
 
+/// All errors that can occur when using the Runway SDK.
+///
+/// Errors are categorized by source: API responses, task lifecycle,
+/// network/serialization, and local validation.
 #[derive(Debug, thiserror::Error)]
 pub enum RunwayError {
     #[error("API error ({status}): {message}")]

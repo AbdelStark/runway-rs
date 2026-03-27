@@ -1,12 +1,30 @@
 use std::time::Duration;
 
+/// Default Runway API base URL.
 pub const DEFAULT_BASE_URL: &str = "https://api.dev.runwayml.com";
+/// Default API version header value.
 pub const DEFAULT_API_VERSION: &str = "2024-11-06";
+/// Default HTTP request timeout (300s / 5 minutes — video generation is slow).
 pub const DEFAULT_TIMEOUT: Duration = Duration::from_secs(300);
+/// Default maximum retry attempts for rate-limited requests.
 pub const DEFAULT_MAX_RETRIES: u32 = 3;
+/// Default interval between task status polls (Runway recommends >= 5s).
 pub const DEFAULT_POLL_INTERVAL: Duration = Duration::from_secs(5);
+/// Default maximum duration to poll before timing out (600s / 10 minutes).
 pub const DEFAULT_MAX_POLL_DURATION: Duration = Duration::from_secs(600);
 
+/// Configuration for the Runway API client.
+///
+/// Use the builder methods to customize behavior:
+///
+/// ```
+/// use runway_sdk::Config;
+/// use std::time::Duration;
+///
+/// let config = Config::new("my-api-key")
+///     .timeout(Duration::from_secs(60))
+///     .max_retries(5);
+/// ```
 #[derive(Debug, Clone)]
 pub struct Config {
     pub api_key: String,

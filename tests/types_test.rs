@@ -202,12 +202,9 @@ fn test_content_moderation_serialization() {
 
 #[test]
 fn test_client_with_api_key() {
-    let client = RunwayClient::with_api_key("test-key-123");
+    let client = RunwayClient::with_api_key("test-key-123").unwrap();
     assert_eq!(client.inner.config.api_key, "test-key-123");
-    assert_eq!(
-        client.inner.config.base_url,
-        "https://api.dev.runwayml.com"
-    );
+    assert_eq!(client.inner.config.base_url, "https://api.dev.runwayml.com");
 }
 
 #[test]
@@ -221,6 +218,177 @@ fn test_client_missing_api_key() {
     if let Some(val) = original {
         std::env::set_var("RUNWAYML_API_SECRET", val);
     }
+}
+
+#[test]
+fn test_client_with_invalid_api_key() {
+    // API key with newline should fail validation, not panic
+    let result = RunwayClient::with_api_key("bad\nkey");
+    assert!(result.is_err());
+    let err = result.unwrap_err();
+    assert!(err.to_string().contains("invalid header characters"));
+}
+
+#[test]
+fn test_video_to_video_request_serialization() {
+    let req = VideoToVideoRequest::new(
+        VideoModel::Gen45,
+        "Transform the scene",
+        MediaInput::from_url("https://example.com/video.mp4"),
+    )
+    .ratio(VideoRatio::Portrait)
+    .duration(8);
+
+    let json = serde_json::to_value(&req).unwrap();
+    assert_eq!(json["model"], "gen4.5");
+    assert_eq!(json["promptText"], "Transform the scene");
+    assert_eq!(json["promptVideo"], "https://example.com/video.mp4");
+    assert_eq!(json["ratio"], "720:1280");
+    assert_eq!(json["duration"], 8);
+}
+
+#[test]
+fn test_character_performance_request_serialization() {
+    let req = CharacterPerformanceRequest::new(
+        VideoModel::Gen4Turbo,
+        "Act surprised",
+        MediaInput::from_url("https://example.com/face.jpg"),
+        MediaInput::from_url("https://example.com/motion.mp4"),
+    )
+    .duration(5)
+    .seed(99);
+
+    let json = serde_json::to_value(&req).unwrap();
+    assert_eq!(json["model"], "gen4_turbo");
+    assert_eq!(json["promptText"], "Act surprised");
+    assert_eq!(json["promptImage"], "https://example.com/face.jpg");
+    assert_eq!(json["promptVideo"], "https://example.com/motion.mp4");
+    assert_eq!(json["duration"], 5);
+    assert_eq!(json["seed"], 99);
+}
+
+#[test]
+fn test_speech_to_speech_request_serialization() {
+    let req = SpeechToSpeechRequest::new(MediaInput::from_url("https://example.com/audio.wav"))
+        .voice_id("voice-123")
+        .seed(42);
+
+    let json = serde_json::to_value(&req).unwrap();
+    assert_eq!(json["audio"], "https://example.com/audio.wav");
+    assert_eq!(json["voiceId"], "voice-123");
+    assert_eq!(json["seed"], 42);
+}
+
+#[test]
+fn test_text_to_speech_request_serialization() {
+    let req = TextToSpeechRequest::new("Hello, world!")
+        .voice_id("voice-456")
+        .seed(7);
+
+    let json = serde_json::to_value(&req).unwrap();
+    assert_eq!(json["promptText"], "Hello, world!");
+    assert_eq!(json["voiceId"], "voice-456");
+    assert_eq!(json["seed"], 7);
+}
+
+#[test]
+fn test_voice_dubbing_request_serialization() {
+    let req = VoiceDubbingRequest::new(MediaInput::from_url("https://example.com/audio.mp3"))
+        .target_language("es")
+        .seed(10);
+
+    let json = serde_json::to_value(&req).unwrap();
+    assert_eq!(json["audio"], "https://example.com/audio.mp3");
+    assert_eq!(json["targetLanguage"], "es");
+    assert_eq!(json["seed"], 10);
+}
+
+#[test]
+fn test_voice_isolation_request_serialization() {
+    let req =
+        VoiceIsolationRequest::new(MediaInput::from_url("https://example.com/noisy.wav")).seed(55);
+
+    let json = serde_json::to_value(&req).unwrap();
+    assert_eq!(json["audio"], "https://example.com/noisy.wav");
+    assert_eq!(json["seed"], 55);
+}
+
+#[test]
+fn test_create_document_request_serialization() {
+    let req = CreateDocumentRequest::new("My Document")
+        .content("Document body text")
+        .description("A test document");
+
+    let json = serde_json::to_value(&req).unwrap();
+    assert_eq!(json["name"], "My Document");
+    assert_eq!(json["content"], "Document body text");
+    assert_eq!(json["description"], "A test document");
+}
+
+#[test]
+fn test_update_document_request_serialization() {
+    let req = UpdateDocumentRequest::new()
+        .name("Updated Name")
+        .content("New content");
+
+    let json = serde_json::to_value(&req).unwrap();
+    assert_eq!(json["name"], "Updated Name");
+    assert_eq!(json["content"], "New content");
+    assert!(json.get("description").is_none());
+}
+
+#[test]
+fn test_create_voice_request_serialization() {
+    let req = CreateVoiceRequest::new("My Voice")
+        .audio("https://example.com/sample.wav")
+        .description("A custom voice");
+
+    let json = serde_json::to_value(&req).unwrap();
+    assert_eq!(json["name"], "My Voice");
+    assert_eq!(json["audio"], "https://example.com/sample.wav");
+    assert_eq!(json["description"], "A custom voice");
+}
+
+#[test]
+fn test_preview_voice_request_serialization() {
+    let req = PreviewVoiceRequest::new("Test speech text").voice_id("voice-789");
+
+    let json = serde_json::to_value(&req).unwrap();
+    assert_eq!(json["text"], "Test speech text");
+    assert_eq!(json["voiceId"], "voice-789");
+}
+
+#[test]
+fn test_usage_query_request_serialization() {
+    let req = UsageQueryRequest::new()
+        .start_date("2024-01-01")
+        .end_date("2024-12-31");
+
+    let json = serde_json::to_value(&req).unwrap();
+    assert_eq!(json["startDate"], "2024-01-01");
+    assert_eq!(json["endDate"], "2024-12-31");
+}
+
+#[test]
+fn test_create_realtime_session_request_serialization() {
+    let req = CreateRealtimeSessionRequest::new()
+        .model("gen4_turbo")
+        .params(serde_json::json!({"key": "value"}));
+
+    let json = serde_json::to_value(&req).unwrap();
+    assert_eq!(json["model"], "gen4_turbo");
+    assert_eq!(json["params"]["key"], "value");
+}
+
+#[test]
+fn test_update_avatar_request_serialization() {
+    let req = UpdateAvatarRequest::new()
+        .name("New Name")
+        .description("Updated description");
+
+    let json = serde_json::to_value(&req).unwrap();
+    assert_eq!(json["name"], "New Name");
+    assert_eq!(json["description"], "Updated description");
 }
 
 #[test]

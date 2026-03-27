@@ -10,8 +10,7 @@ pub struct TextToSpeechResource {
 
 impl TextToSpeechResource {
     pub async fn create(&self, request: TextToSpeechRequest) -> Result<PendingTask, RunwayError> {
-        let resp: TaskCreateResponse =
-            self.client.post("/v1/text_to_speech", &request).await?;
+        let resp: TaskCreateResponse = self.client.post("/v1/text_to_speech", &request).await?;
         Ok(PendingTask::new(self.client.clone(), resp.id))
     }
 }
