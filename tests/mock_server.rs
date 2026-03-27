@@ -1,3 +1,4 @@
+use futures::StreamExt;
 use runway_sdk::*;
 use std::time::Duration;
 use wiremock::matchers::{header, method, path};
@@ -1292,4 +1293,222 @@ async fn test_tasks_list_with_filters() {
     assert_eq!(list.tasks.len(), 1);
     assert_eq!(list.tasks[0].status, TaskStatus::Running);
     assert_eq!(list.has_more, Some(true));
+}
+
+// ── Stream status tests ──────────────────────────────────────────────────
+
+#[tokio::test]
+async fn test_stream_status_succeeds() {
+    let mock_server = MockServer::start().await;
+
+    // Create task
+    Mock::given(method("POST"))
+        .and(path("/v1/text_to_video"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "id": "550e8400-e29b-41d4-a716-446655440000"
+        })))
+        .expect(1)
+        .mount(&mock_server)
+        .await;
+
+    // Poll returns SUCCEEDED immediately
+    Mock::given(method("GET"))
+        .and(path("/v1/tasks/550e8400-e29b-41d4-a716-446655440000"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "id": "550e8400-e29b-41d4-a716-446655440000",
+            "status": "SUCCEEDED",
+            "createdAt": "2024-01-01T00:00:00Z",
+            "output": ["https://cdn.runway.com/result.mp4"],
+            "progress": 1.0
+        })))
+        .expect(1..)
+        .mount(&mock_server)
+        .await;
+
+    let config = Config::new("test-key")
+        .base_url(mock_server.uri())
+        .poll_interval(Duration::from_millis(50));
+    let client = RunwayClient::with_config(config).unwrap();
+
+    let pending = client
+        .text_to_video()
+        .create(TextToVideoRequest::new(VideoModel::Gen45, "test"))
+        .await
+        .unwrap();
+
+    let updates: Vec<_> = pending.stream_status().collect().await;
+
+    assert_eq!(updates.len(), 1);
+    let task = updates[0].as_ref().unwrap();
+    assert_eq!(task.status, TaskStatus::Succeeded);
+    assert_eq!(
+        task.output.as_ref().unwrap(),
+        &vec!["https://cdn.runway.com/result.mp4"]
+    );
+}
+
+#[tokio::test]
+async fn test_stream_status_failure() {
+    let mock_server = MockServer::start().await;
+
+    Mock::given(method("POST"))
+        .and(path("/v1/sound_effect"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "id": "660e8400-e29b-41d4-a716-446655440000"
+        })))
+        .expect(1)
+        .mount(&mock_server)
+        .await;
+
+    Mock::given(method("GET"))
+        .and(path("/v1/tasks/660e8400-e29b-41d4-a716-446655440000"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "id": "660e8400-e29b-41d4-a716-446655440000",
+            "status": "FAILED",
+            "createdAt": "2024-01-01T00:00:00Z",
+            "failure": "Invalid audio format",
+            "failureCode": "INVALID_INPUT"
+        })))
+        .mount(&mock_server)
+        .await;
+
+    let config = Config::new("test-key")
+        .base_url(mock_server.uri())
+        .poll_interval(Duration::from_millis(50));
+    let client = RunwayClient::with_config(config).unwrap();
+
+    let pending = client
+        .sound_effect()
+        .create(SoundEffectRequest::new("test"))
+        .await
+        .unwrap();
+
+    let updates: Vec<_> = pending.stream_status().collect().await;
+
+    assert_eq!(updates.len(), 1);
+    let task = updates[0].as_ref().unwrap();
+    assert_eq!(task.status, TaskStatus::Failed);
+    assert_eq!(task.failure.as_deref(), Some("Invalid audio format"));
+}
+
+// ── Multi-phase polling test ─────────────────────────────────────────────
+
+#[tokio::test]
+async fn test_polling_multi_phase() {
+    use std::sync::atomic::{AtomicU32, Ordering};
+    use std::sync::Arc;
+
+    let mock_server = MockServer::start().await;
+
+    Mock::given(method("POST"))
+        .and(path("/v1/text_to_image"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "id": "770e8400-e29b-41d4-a716-446655440000"
+        })))
+        .expect(1)
+        .mount(&mock_server)
+        .await;
+
+    // Use a counter to serve different responses on each poll
+    let call_count = Arc::new(AtomicU32::new(0));
+    let call_count_clone = call_count.clone();
+
+    Mock::given(method("GET"))
+        .and(path("/v1/tasks/770e8400-e29b-41d4-a716-446655440000"))
+        .respond_with(move |_req: &wiremock::Request| {
+            let count = call_count_clone.fetch_add(1, Ordering::SeqCst);
+            match count {
+                0 => ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                    "id": "770e8400-e29b-41d4-a716-446655440000",
+                    "status": "PENDING",
+                    "createdAt": "2024-01-01T00:00:00Z",
+                    "progress": 0.0
+                })),
+                1 => ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                    "id": "770e8400-e29b-41d4-a716-446655440000",
+                    "status": "RUNNING",
+                    "createdAt": "2024-01-01T00:00:00Z",
+                    "progress": 0.5
+                })),
+                _ => ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                    "id": "770e8400-e29b-41d4-a716-446655440000",
+                    "status": "SUCCEEDED",
+                    "createdAt": "2024-01-01T00:00:00Z",
+                    "output": ["https://cdn.runway.com/image.png"],
+                    "progress": 1.0
+                })),
+            }
+        })
+        .mount(&mock_server)
+        .await;
+
+    let config = Config::new("test-key")
+        .base_url(mock_server.uri())
+        .poll_interval(Duration::from_millis(50))
+        .max_poll_duration(Duration::from_secs(10));
+    let client = RunwayClient::with_config(config).unwrap();
+
+    let task = client
+        .text_to_image()
+        .create(TextToImageRequest::new(
+            ImageModel::Gen4ImageTurbo,
+            "A sunset",
+        ))
+        .await
+        .unwrap()
+        .wait_with_config(Duration::from_millis(50), Duration::from_secs(10))
+        .await
+        .unwrap();
+
+    assert_eq!(task.status, TaskStatus::Succeeded);
+    assert_eq!(
+        task.output.unwrap(),
+        vec!["https://cdn.runway.com/image.png"]
+    );
+    // Should have polled at least 3 times (PENDING, RUNNING, SUCCEEDED)
+    assert!(call_count.load(Ordering::SeqCst) >= 3);
+}
+
+// ── Polling timeout test ─────────────────────────────────────────────────
+
+#[tokio::test]
+async fn test_polling_timeout() {
+    let mock_server = MockServer::start().await;
+
+    Mock::given(method("POST"))
+        .and(path("/v1/text_to_video"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "id": "880e8400-e29b-41d4-a716-446655440000"
+        })))
+        .expect(1)
+        .mount(&mock_server)
+        .await;
+
+    // Always return RUNNING — never complete
+    Mock::given(method("GET"))
+        .and(path("/v1/tasks/880e8400-e29b-41d4-a716-446655440000"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "id": "880e8400-e29b-41d4-a716-446655440000",
+            "status": "RUNNING",
+            "createdAt": "2024-01-01T00:00:00Z",
+            "progress": 0.1
+        })))
+        .mount(&mock_server)
+        .await;
+
+    let config = Config::new("test-key")
+        .base_url(mock_server.uri())
+        .poll_interval(Duration::from_millis(50))
+        .max_poll_duration(Duration::from_secs(10));
+    let client = RunwayClient::with_config(config).unwrap();
+
+    let result = client
+        .text_to_video()
+        .create(TextToVideoRequest::new(VideoModel::Gen45, "test"))
+        .await
+        .unwrap()
+        .wait_with_config(Duration::from_millis(50), Duration::from_millis(200))
+        .await;
+
+    assert!(matches!(result, Err(RunwayError::Timeout { .. })));
 }

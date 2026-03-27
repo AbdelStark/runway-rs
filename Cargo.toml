@@ -53,3 +53,47 @@ path = "examples/workflows.rs"
 [[example]]
 name = "poll_task"
 path = "examples/poll_task.rs"
+
+[[example]]
+name = "lip_sync"
+path = "examples/lip_sync.rs"
+
+[[example]]
+name = "image_upscale"
+path = "examples/image_upscale.rs"
+
+[[example]]
+name = "list_tasks"
+path = "examples/list_tasks.rs"
+
+[[example]]
+name = "text_to_image"
+path = "examples/text_to_image.rs"
+
+[[example]]
+name = "sound_effect"
+path = "examples/sound_effect.rs"
+
+[[example]]
+name = "text_to_speech"
+path = "examples/text_to_speech.rs"
+
+[[example]]
+name = "character_performance"
+path = "examples/character_performance.rs"
+
+[[example]]
+name = "voice_dubbing"
+path = "examples/voice_dubbing.rs"
+
+[[example]]
+name = "voice_isolation"
+path = "examples/voice_isolation.rs"
+
+[[example]]
+name = "documents"
+path = "examples/documents.rs"
+
+[[example]]
+name = "organization"
+path = "examples/organization.rs"
