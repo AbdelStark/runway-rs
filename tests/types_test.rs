@@ -391,6 +391,123 @@ fn test_update_avatar_request_serialization() {
     assert_eq!(json["description"], "Updated description");
 }
 
+// ── Lip Sync ────────────────────────────────────────────────────────────
+
+#[test]
+fn test_lip_sync_request_serialization() {
+    let req = LipSyncRequest::new(
+        VideoModel::Gen45,
+        MediaInput::from_url("https://example.com/video.mp4"),
+        MediaInput::from_url("https://example.com/audio.wav"),
+    )
+    .max_duration(30)
+    .seed(42);
+
+    let json = serde_json::to_value(&req).unwrap();
+    assert_eq!(json["model"], "gen4.5");
+    assert_eq!(json["promptVideo"], "https://example.com/video.mp4");
+    assert_eq!(json["promptAudio"], "https://example.com/audio.wav");
+    assert_eq!(json["maxDuration"], 30);
+    assert_eq!(json["seed"], 42);
+    assert!(json.get("contentModeration").is_none());
+}
+
+#[test]
+fn test_lip_sync_request_minimal() {
+    let req = LipSyncRequest::new(
+        VideoModel::Gen4Turbo,
+        MediaInput::from_url("https://example.com/v.mp4"),
+        MediaInput::from_url("https://example.com/a.mp3"),
+    );
+
+    let json = serde_json::to_value(&req).unwrap();
+    assert_eq!(json["model"], "gen4_turbo");
+    assert!(json.get("maxDuration").is_none());
+    assert!(json.get("seed").is_none());
+}
+
+// ── Image Upscale ───────────────────────────────────────────────────────
+
+#[test]
+fn test_image_upscale_request_serialization() {
+    let req = ImageUpscaleRequest::new(
+        ImageModel::Gen4ImageTurbo,
+        MediaInput::from_url("https://example.com/img.jpg"),
+    )
+    .resolution(4096)
+    .seed(7);
+
+    let json = serde_json::to_value(&req).unwrap();
+    assert_eq!(json["model"], "gen4_image_turbo");
+    assert_eq!(json["promptImage"], "https://example.com/img.jpg");
+    assert_eq!(json["resolution"], 4096);
+    assert_eq!(json["seed"], 7);
+}
+
+#[test]
+fn test_image_upscale_request_minimal() {
+    let req = ImageUpscaleRequest::new(
+        ImageModel::Gen4Image,
+        MediaInput::from_url("https://example.com/low_res.png"),
+    );
+
+    let json = serde_json::to_value(&req).unwrap();
+    assert_eq!(json["model"], "gen4_image");
+    assert!(json.get("resolution").is_none());
+    assert!(json.get("seed").is_none());
+}
+
+// ── Task List Query ─────────────────────────────────────────────────────
+
+#[test]
+fn test_task_list_query_serialization() {
+    let query = TaskListQuery::new()
+        .status(TaskStatus::Running)
+        .limit(10)
+        .offset(5);
+
+    let json = serde_json::to_value(&query).unwrap();
+    assert_eq!(json["status"], "RUNNING");
+    assert_eq!(json["limit"], 10);
+    assert_eq!(json["offset"], 5);
+}
+
+#[test]
+fn test_task_list_query_empty() {
+    let query = TaskListQuery::new();
+    let json = serde_json::to_value(&query).unwrap();
+    assert!(json.get("status").is_none());
+    assert!(json.get("limit").is_none());
+    assert!(json.get("offset").is_none());
+}
+
+#[test]
+fn test_task_list_deserialization() {
+    let json = r#"{
+        "tasks": [
+            {
+                "id": "550e8400-e29b-41d4-a716-446655440000",
+                "status": "SUCCEEDED",
+                "createdAt": "2024-01-01T00:00:00Z",
+                "output": ["https://example.com/video.mp4"]
+            },
+            {
+                "id": "660e8400-e29b-41d4-a716-446655440000",
+                "status": "RUNNING",
+                "createdAt": "2024-01-02T00:00:00Z",
+                "progress": 0.5
+            }
+        ],
+        "hasMore": true
+    }"#;
+
+    let list: TaskList = serde_json::from_str(json).unwrap();
+    assert_eq!(list.tasks.len(), 2);
+    assert_eq!(list.tasks[0].status, TaskStatus::Succeeded);
+    assert_eq!(list.tasks[1].status, TaskStatus::Running);
+    assert_eq!(list.has_more, Some(true));
+}
+
 // ── Send + Sync assertions ───────────────────────────────────────────────
 
 fn _assert_send<T: Send>() {}

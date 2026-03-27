@@ -202,6 +202,18 @@ impl RunwayClient {
         }
     }
 
+    pub fn lip_sync(&self) -> LipSyncResource {
+        LipSyncResource {
+            client: self.clone(),
+        }
+    }
+
+    pub fn image_upscale(&self) -> ImageUpscaleResource {
+        ImageUpscaleResource {
+            client: self.clone(),
+        }
+    }
+
     // ── Internal HTTP helpers ───────────────────────────────────────────
 
     pub(crate) fn url(&self, path: &str) -> String {

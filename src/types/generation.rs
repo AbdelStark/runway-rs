@@ -395,6 +395,92 @@ impl VoiceIsolationRequest {
     }
 }
 
+// ── Lip Sync ───────────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LipSyncRequest {
+    pub model: VideoModel,
+    pub prompt_video: MediaInput,
+    pub prompt_audio: MediaInput,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_duration: Option<u8>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub seed: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub content_moderation: Option<ContentModeration>,
+}
+
+impl LipSyncRequest {
+    pub fn new(model: VideoModel, video: MediaInput, audio: MediaInput) -> Self {
+        Self {
+            model,
+            prompt_video: video,
+            prompt_audio: audio,
+            max_duration: None,
+            seed: None,
+            content_moderation: None,
+        }
+    }
+
+    pub fn max_duration(mut self, secs: u8) -> Self {
+        self.max_duration = Some(secs);
+        self
+    }
+
+    pub fn seed(mut self, seed: u32) -> Self {
+        self.seed = Some(seed);
+        self
+    }
+
+    pub fn content_moderation(mut self, cm: ContentModeration) -> Self {
+        self.content_moderation = Some(cm);
+        self
+    }
+}
+
+// ── Image Upscale ──────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ImageUpscaleRequest {
+    pub model: ImageModel,
+    pub prompt_image: MediaInput,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub resolution: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub seed: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub content_moderation: Option<ContentModeration>,
+}
+
+impl ImageUpscaleRequest {
+    pub fn new(model: ImageModel, image: MediaInput) -> Self {
+        Self {
+            model,
+            prompt_image: image,
+            resolution: None,
+            seed: None,
+            content_moderation: None,
+        }
+    }
+
+    pub fn resolution(mut self, resolution: u32) -> Self {
+        self.resolution = Some(resolution);
+        self
+    }
+
+    pub fn seed(mut self, seed: u32) -> Self {
+        self.seed = Some(seed);
+        self
+    }
+
+    pub fn content_moderation(mut self, cm: ContentModeration) -> Self {
+        self.content_moderation = Some(cm);
+        self
+    }
+}
+
 // ── Upload ──────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
