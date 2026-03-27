@@ -25,7 +25,7 @@ pub const DEFAULT_MAX_POLL_DURATION: Duration = Duration::from_secs(600);
 ///     .timeout(Duration::from_secs(60))
 ///     .max_retries(5);
 /// ```
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct Config {
     pub api_key: String,
     pub base_url: String,
@@ -77,5 +77,19 @@ impl Config {
     pub fn max_poll_duration(mut self, duration: Duration) -> Self {
         self.max_poll_duration = duration;
         self
+    }
+}
+
+impl std::fmt::Debug for Config {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Config")
+            .field("api_key", &"[REDACTED]")
+            .field("base_url", &self.base_url)
+            .field("api_version", &self.api_version)
+            .field("timeout", &self.timeout)
+            .field("max_retries", &self.max_retries)
+            .field("poll_interval", &self.poll_interval)
+            .field("max_poll_duration", &self.max_poll_duration)
+            .finish()
     }
 }
