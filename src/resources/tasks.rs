@@ -90,6 +90,40 @@ impl TasksResource {
         }
     }
 
+    /// Stream individual tasks across all pages, automatically paginating.
+    ///
+    /// This is a convenience wrapper around [`list_stream`](Self::list_stream)
+    /// that flattens pages into individual [`Task`] items.
+    pub fn list_all(self, query: TaskListQuery) -> impl Stream<Item = Result<Task, RunwayError>> {
+        let client = self.client;
+        let page_size = query.limit.unwrap_or(100);
+        let status_filter = query.status.clone();
+        let initial_offset = query.offset.unwrap_or(0);
+
+        try_stream! {
+            let mut offset = initial_offset;
+            loop {
+                let params = TaskListParams {
+                    status: status_filter.clone(),
+                    limit: Some(page_size),
+                    offset: Some(offset),
+                };
+
+                let page: TaskList = client.get_with_query("/v1/tasks", &params).await?;
+                let has_more = page.has_more.unwrap_or(false);
+                let count = page.tasks.len() as u32;
+                for task in page.tasks {
+                    yield task;
+                }
+
+                if !has_more || count == 0 {
+                    break;
+                }
+                offset += count;
+            }
+        }
+    }
+
     pub async fn get(&self, id: Uuid) -> Result<Task, RunwayError> {
         self.client.get(&format!("/v1/tasks/{}", id)).await
     }
