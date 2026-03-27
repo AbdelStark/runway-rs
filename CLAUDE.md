@@ -19,7 +19,7 @@ Unofficial Rust SDK for the Runway API — async client for AI video/image/audio
 <structure>
 src/
 ├── lib.rs              # Crate root — re-exports public API
-├── client.rs           # RunwayClient — HTTP methods (get/post/patch/delete), retry logic
+├── client.rs           # RunwayClient — HTTP methods, shared retry (send_with_retry) & error handling (check_response)
 ├── config.rs           # Config builder — base URL, timeouts, poll intervals
 ├── error.rs            # RunwayError enum — all error variants
 ├── polling.rs          # PendingTask — poll-until-done and streaming status
@@ -68,7 +68,7 @@ examples/               # Usage examples (require RUNWAYML_API_SECRET) [agent: c
 | Task             | Command                              | Notes                           |
 |------------------|--------------------------------------|---------------------------------|
 | Build            | `cargo build`                        | ~5s clean, <1s incremental      |
-| Test (all)       | `cargo test`                         | 21 tests, ~1s                   |
+| Test (all)       | `cargo test`                         | 82 tests, ~8s                   |
 | Test (specific)  | `cargo test test_name`               | Filter by test name             |
 | Check            | `cargo check`                        | Type check without codegen      |
 | Clippy           | `cargo clippy -- -D warnings`        | Lint — treat warnings as errors |
@@ -170,7 +170,7 @@ examples/               # Usage examples (require RUNWAYML_API_SECRET) [agent: c
   — Harness: Claude Code
   — API version: 2024-11-06 (set in config.rs DEFAULT_API_VERSION)
   — Base URL: https://api.dev.runwayml.com
-  — No CI/CD configured yet
+  — CI: GitHub Actions (.github/workflows/ci.yml) — check, test, clippy, fmt, doc
   — Dual license: MIT OR Apache-2.0
 </environment>
 

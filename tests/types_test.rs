@@ -391,6 +391,44 @@ fn test_update_avatar_request_serialization() {
     assert_eq!(json["description"], "Updated description");
 }
 
+// ── Send + Sync assertions ───────────────────────────────────────────────
+
+fn _assert_send<T: Send>() {}
+fn _assert_sync<T: Sync>() {}
+
+#[test]
+fn test_client_is_send_sync() {
+    _assert_send::<RunwayClient>();
+    _assert_sync::<RunwayClient>();
+}
+
+#[test]
+fn test_pending_task_is_send() {
+    _assert_send::<PendingTask>();
+}
+
+#[test]
+fn test_error_is_send_sync() {
+    _assert_send::<RunwayError>();
+    _assert_sync::<RunwayError>();
+}
+
+// ── Config Debug redacts API key ─────────────────────────────────────────
+
+#[test]
+fn test_config_debug_redacts_api_key() {
+    let config = Config::new("super-secret-api-key-12345");
+    let debug_output = format!("{:?}", config);
+    assert!(
+        !debug_output.contains("super-secret"),
+        "Config Debug output should not contain the API key"
+    );
+    assert!(
+        debug_output.contains("REDACTED"),
+        "Config Debug output should show [REDACTED]"
+    );
+}
+
 #[test]
 fn test_config_builder() {
     use runway_sdk::Config;

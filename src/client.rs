@@ -208,106 +208,11 @@ impl RunwayClient {
         format!("{}{}", self.inner.config.base_url, path)
     }
 
-    pub(crate) async fn post<Req: Serialize, Resp: DeserializeOwned>(
+    /// Check a response for errors. Returns the response if successful.
+    async fn check_response(
         &self,
-        path: &str,
-        body: &Req,
-    ) -> Result<Resp, RunwayError> {
-        let url = self.url(path);
-        tracing::debug!("POST {}", url);
-
-        let mut retries = 0;
-        loop {
-            let resp = self.inner.http.post(&url).json(body).send().await?;
-            let status = resp.status();
-
-            if status == reqwest::StatusCode::TOO_MANY_REQUESTS {
-                if retries >= self.inner.config.max_retries {
-                    let retry_after = resp
-                        .headers()
-                        .get("retry-after")
-                        .and_then(|v| v.to_str().ok())
-                        .and_then(|v| v.parse::<u64>().ok())
-                        .map(Duration::from_secs);
-                    return Err(RunwayError::RateLimited { retry_after });
-                }
-                let wait = Duration::from_secs(2u64.pow(retries));
-                tracing::warn!("Rate limited, retrying in {:?}", wait);
-                tokio::time::sleep(wait).await;
-                retries += 1;
-                continue;
-            }
-
-            if status == reqwest::StatusCode::UNAUTHORIZED {
-                return Err(RunwayError::Unauthorized);
-            }
-
-            if !status.is_success() {
-                let text = resp.text().await.unwrap_or_default();
-                return Err(RunwayError::Api {
-                    status: status.as_u16(),
-                    message: text,
-                    code: None,
-                });
-            }
-
-            let result = resp.json::<Resp>().await?;
-            return Ok(result);
-        }
-    }
-
-    pub(crate) async fn get<Resp: DeserializeOwned>(
-        &self,
-        path: &str,
-    ) -> Result<Resp, RunwayError> {
-        let url = self.url(path);
-        tracing::debug!("GET {}", url);
-
-        let mut retries = 0;
-        loop {
-            let resp = self.inner.http.get(&url).send().await?;
-            let status = resp.status();
-
-            if status == reqwest::StatusCode::TOO_MANY_REQUESTS {
-                if retries >= self.inner.config.max_retries {
-                    let retry_after = resp
-                        .headers()
-                        .get("retry-after")
-                        .and_then(|v| v.to_str().ok())
-                        .and_then(|v| v.parse::<u64>().ok())
-                        .map(Duration::from_secs);
-                    return Err(RunwayError::RateLimited { retry_after });
-                }
-                let wait = Duration::from_secs(2u64.pow(retries));
-                tracing::warn!("Rate limited, retrying in {:?}", wait);
-                tokio::time::sleep(wait).await;
-                retries += 1;
-                continue;
-            }
-
-            if status == reqwest::StatusCode::UNAUTHORIZED {
-                return Err(RunwayError::Unauthorized);
-            }
-
-            if !status.is_success() {
-                let text = resp.text().await.unwrap_or_default();
-                return Err(RunwayError::Api {
-                    status: status.as_u16(),
-                    message: text,
-                    code: None,
-                });
-            }
-
-            let result = resp.json::<Resp>().await?;
-            return Ok(result);
-        }
-    }
-
-    pub(crate) async fn delete(&self, path: &str) -> Result<(), RunwayError> {
-        let url = self.url(path);
-        tracing::debug!("DELETE {}", url);
-
-        let resp = self.inner.http.delete(&url).send().await?;
+        resp: reqwest::Response,
+    ) -> Result<reqwest::Response, RunwayError> {
         let status = resp.status();
 
         if status == reqwest::StatusCode::UNAUTHORIZED {
@@ -323,6 +228,78 @@ impl RunwayClient {
             });
         }
 
+        Ok(resp)
+    }
+
+    /// Send a request with retry logic for rate limiting (HTTP 429).
+    async fn send_with_retry(
+        &self,
+        request_builder: impl Fn() -> reqwest::RequestBuilder,
+    ) -> Result<reqwest::Response, RunwayError> {
+        let mut retries = 0;
+        loop {
+            let resp = request_builder().send().await?;
+
+            if resp.status() == reqwest::StatusCode::TOO_MANY_REQUESTS {
+                if retries >= self.inner.config.max_retries {
+                    let retry_after = resp
+                        .headers()
+                        .get("retry-after")
+                        .and_then(|v| v.to_str().ok())
+                        .and_then(|v| v.parse::<u64>().ok())
+                        .map(Duration::from_secs);
+                    return Err(RunwayError::RateLimited { retry_after });
+                }
+                let wait = Duration::from_secs(2u64.pow(retries));
+                tracing::warn!("Rate limited, retrying in {:?}", wait);
+                tokio::time::sleep(wait).await;
+                retries += 1;
+                continue;
+            }
+
+            return self.check_response(resp).await;
+        }
+    }
+
+    pub(crate) async fn post<Req: Serialize, Resp: DeserializeOwned>(
+        &self,
+        path: &str,
+        body: &Req,
+    ) -> Result<Resp, RunwayError> {
+        let url = self.url(path);
+        tracing::debug!("POST {}", url);
+        let body_bytes = serde_json::to_vec(body)?;
+
+        let resp = self
+            .send_with_retry(|| {
+                self.inner
+                    .http
+                    .post(&url)
+                    .header(CONTENT_TYPE, "application/json")
+                    .body(body_bytes.clone())
+            })
+            .await?;
+
+        Ok(resp.json::<Resp>().await?)
+    }
+
+    pub(crate) async fn get<Resp: DeserializeOwned>(
+        &self,
+        path: &str,
+    ) -> Result<Resp, RunwayError> {
+        let url = self.url(path);
+        tracing::debug!("GET {}", url);
+
+        let resp = self.send_with_retry(|| self.inner.http.get(&url)).await?;
+        Ok(resp.json::<Resp>().await?)
+    }
+
+    pub(crate) async fn delete(&self, path: &str) -> Result<(), RunwayError> {
+        let url = self.url(path);
+        tracing::debug!("DELETE {}", url);
+
+        let resp = self.inner.http.delete(&url).send().await?;
+        self.check_response(resp).await?;
         Ok(())
     }
 
@@ -335,23 +312,8 @@ impl RunwayClient {
         tracing::debug!("PATCH {}", url);
 
         let resp = self.inner.http.patch(&url).json(body).send().await?;
-        let status = resp.status();
-
-        if status == reqwest::StatusCode::UNAUTHORIZED {
-            return Err(RunwayError::Unauthorized);
-        }
-
-        if !status.is_success() {
-            let text = resp.text().await.unwrap_or_default();
-            return Err(RunwayError::Api {
-                status: status.as_u16(),
-                message: text,
-                code: None,
-            });
-        }
-
-        let result = resp.json::<Resp>().await?;
-        Ok(result)
+        let resp = self.check_response(resp).await?;
+        Ok(resp.json::<Resp>().await?)
     }
 }
 

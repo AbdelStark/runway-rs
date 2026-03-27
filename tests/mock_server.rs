@@ -664,6 +664,251 @@ async fn test_sound_effect_create() {
     );
 }
 
+// ── Additional generation resource tests (audio/voice) ───────────────────
+
+#[tokio::test]
+async fn test_character_performance_create() {
+    let mock_server = MockServer::start().await;
+
+    Mock::given(method("POST"))
+        .and(path("/v1/character_performance"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "id": "aa0e8400-e29b-41d4-a716-446655440000"
+        })))
+        .expect(1)
+        .mount(&mock_server)
+        .await;
+
+    let client = RunwayClient::with_config(test_config(&mock_server.uri())).unwrap();
+    let pending = client
+        .character_performance()
+        .create(CharacterPerformanceRequest::new(
+            VideoModel::Gen4Turbo,
+            "Wave hello",
+            MediaInput::from_url("https://example.com/face.jpg"),
+            MediaInput::from_url("https://example.com/motion.mp4"),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(
+        pending.id().to_string(),
+        "aa0e8400-e29b-41d4-a716-446655440000"
+    );
+}
+
+#[tokio::test]
+async fn test_text_to_speech_create() {
+    let mock_server = MockServer::start().await;
+
+    Mock::given(method("POST"))
+        .and(path("/v1/text_to_speech"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "id": "bb0e8400-e29b-41d4-a716-446655440000"
+        })))
+        .expect(1)
+        .mount(&mock_server)
+        .await;
+
+    let client = RunwayClient::with_config(test_config(&mock_server.uri())).unwrap();
+    let pending = client
+        .text_to_speech()
+        .create(TextToSpeechRequest::new("Hello world").voice_id("v-1"))
+        .await
+        .unwrap();
+    assert_eq!(
+        pending.id().to_string(),
+        "bb0e8400-e29b-41d4-a716-446655440000"
+    );
+}
+
+#[tokio::test]
+async fn test_speech_to_speech_create() {
+    let mock_server = MockServer::start().await;
+
+    Mock::given(method("POST"))
+        .and(path("/v1/speech_to_speech"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "id": "cc0e8400-e29b-41d4-a716-446655440000"
+        })))
+        .expect(1)
+        .mount(&mock_server)
+        .await;
+
+    let client = RunwayClient::with_config(test_config(&mock_server.uri())).unwrap();
+    let pending = client
+        .speech_to_speech()
+        .create(SpeechToSpeechRequest::new(MediaInput::from_url(
+            "https://example.com/audio.wav",
+        )))
+        .await
+        .unwrap();
+    assert_eq!(
+        pending.id().to_string(),
+        "cc0e8400-e29b-41d4-a716-446655440000"
+    );
+}
+
+#[tokio::test]
+async fn test_voice_dubbing_create() {
+    let mock_server = MockServer::start().await;
+
+    Mock::given(method("POST"))
+        .and(path("/v1/voice_dubbing"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "id": "dd0e8400-e29b-41d4-a716-446655440000"
+        })))
+        .expect(1)
+        .mount(&mock_server)
+        .await;
+
+    let client = RunwayClient::with_config(test_config(&mock_server.uri())).unwrap();
+    let pending = client
+        .voice_dubbing()
+        .create(
+            VoiceDubbingRequest::new(MediaInput::from_url("https://example.com/speech.mp3"))
+                .target_language("es"),
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        pending.id().to_string(),
+        "dd0e8400-e29b-41d4-a716-446655440000"
+    );
+}
+
+#[tokio::test]
+async fn test_voice_isolation_create() {
+    let mock_server = MockServer::start().await;
+
+    Mock::given(method("POST"))
+        .and(path("/v1/voice_isolation"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "id": "ee0e8400-e29b-41d4-a716-446655440000"
+        })))
+        .expect(1)
+        .mount(&mock_server)
+        .await;
+
+    let client = RunwayClient::with_config(test_config(&mock_server.uri())).unwrap();
+    let pending = client
+        .voice_isolation()
+        .create(VoiceIsolationRequest::new(MediaInput::from_url(
+            "https://example.com/noisy.wav",
+        )))
+        .await
+        .unwrap();
+    assert_eq!(
+        pending.id().to_string(),
+        "ee0e8400-e29b-41d4-a716-446655440000"
+    );
+}
+
+// ── Workflow invocation test ──────────────────────────────────────────────
+
+#[tokio::test]
+async fn test_workflow_invocation_get() {
+    let mock_server = MockServer::start().await;
+
+    Mock::given(method("GET"))
+        .and(path("/v1/workflow_invocations/inv-42"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "id": "inv-42",
+            "status": "completed",
+            "output": {"url": "https://cdn.runway.com/result.mp4"}
+        })))
+        .expect(1)
+        .mount(&mock_server)
+        .await;
+
+    let client = RunwayClient::with_config(test_config(&mock_server.uri())).unwrap();
+    let inv = client.workflow_invocations().get("inv-42").await.unwrap();
+    assert_eq!(inv.id, "inv-42");
+    assert_eq!(inv.status, Some("completed".into()));
+}
+
+// ── Upload file full flow test ───────────────────────────────────────────
+
+#[tokio::test]
+async fn test_upload_file() {
+    let mock_server = MockServer::start().await;
+
+    // Mock the upload creation endpoint
+    let presigned_url = format!("{}/presigned-upload", mock_server.uri());
+    Mock::given(method("POST"))
+        .and(path("/v1/uploads"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "id": "upload-456",
+            "uploadUrl": presigned_url
+        })))
+        .expect(1)
+        .mount(&mock_server)
+        .await;
+
+    // Mock the presigned URL PUT — verify no Authorization header is sent
+    Mock::given(method("PUT"))
+        .and(path("/presigned-upload"))
+        .respond_with(ResponseTemplate::new(200))
+        .expect(1)
+        .mount(&mock_server)
+        .await;
+
+    let client = RunwayClient::with_config(test_config(&mock_server.uri())).unwrap();
+
+    // Create a temporary file
+    let tmp_dir = std::env::temp_dir();
+    let tmp_file = tmp_dir.join("test-upload.txt");
+    tokio::fs::write(&tmp_file, b"hello world").await.unwrap();
+
+    let uri = client.uploads().upload_file(&tmp_file).await.unwrap();
+    assert_eq!(uri, "runway://upload-456");
+
+    // Cleanup
+    let _ = tokio::fs::remove_file(&tmp_file).await;
+}
+
+// ── Error handling edge case tests ───────────────────────────────────────
+
+#[tokio::test]
+async fn test_delete_unauthorized() {
+    let mock_server = MockServer::start().await;
+
+    Mock::given(method("DELETE"))
+        .and(path("/v1/tasks/550e8400-e29b-41d4-a716-446655440000"))
+        .respond_with(ResponseTemplate::new(401))
+        .expect(1)
+        .mount(&mock_server)
+        .await;
+
+    let client = RunwayClient::with_config(test_config(&mock_server.uri())).unwrap();
+    let task_id = uuid::Uuid::parse_str("550e8400-e29b-41d4-a716-446655440000").unwrap();
+
+    let result = client.tasks().delete(task_id).await;
+    assert!(matches!(result, Err(RunwayError::Unauthorized)));
+}
+
+#[tokio::test]
+async fn test_patch_api_error() {
+    let mock_server = MockServer::start().await;
+
+    Mock::given(method("PATCH"))
+        .and(path("/v1/avatars/av-1"))
+        .respond_with(ResponseTemplate::new(422).set_body_string(r#"{"error": "Invalid name"}"#))
+        .expect(1)
+        .mount(&mock_server)
+        .await;
+
+    let client = RunwayClient::with_config(test_config(&mock_server.uri())).unwrap();
+    let result = client
+        .avatars()
+        .update("av-1", UpdateAvatarRequest::new().name(""))
+        .await;
+
+    match result {
+        Err(RunwayError::Api { status, .. }) => assert_eq!(status, 422),
+        other => panic!("Expected Api error, got {:?}", other),
+    }
+}
+
 // ── Rate limit exhaustion test ───────────────────────────────────────────
 
 #[tokio::test]

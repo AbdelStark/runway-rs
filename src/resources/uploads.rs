@@ -38,10 +38,11 @@ impl UploadsResource {
             .first_or_octet_stream()
             .to_string();
 
-        let upload_resp = self
-            .client
-            .inner
-            .http
+        // Use a separate client without default auth headers for the presigned URL.
+        // The presigned URL already contains authentication; sending our API key
+        // to a third-party storage endpoint would be a credential leak.
+        let upload_http = reqwest::Client::new();
+        let upload_resp = upload_http
             .put(&resp.upload_url)
             .header("Content-Type", mime)
             .body(data)
