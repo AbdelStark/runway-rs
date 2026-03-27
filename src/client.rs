@@ -8,15 +8,35 @@ use crate::config::Config;
 use crate::error::RunwayError;
 use crate::resources::*;
 
-/// Inner client state shared via Arc.
+/// Inner client state shared via `Arc`.
 pub struct ClientInner {
     pub(crate) http: reqwest::Client,
+    /// The configuration used to construct this client.
     pub config: Config,
 }
 
 /// The main entry point for interacting with the Runway API.
+///
+/// `RunwayClient` is cheaply cloneable (backed by `Arc`) and safe to share
+/// across tasks and threads.
+///
+/// # Examples
+///
+/// ```no_run
+/// # async fn run() -> Result<(), Box<dyn std::error::Error>> {
+/// use runway_sdk::RunwayClient;
+///
+/// // From RUNWAYML_API_SECRET env var:
+/// let client = RunwayClient::new()?;
+///
+/// // Or with an explicit key:
+/// let client = RunwayClient::with_api_key("sk_test_...")?;
+/// # Ok(())
+/// # }
+/// ```
 #[derive(Clone)]
 pub struct RunwayClient {
+    /// Access to the inner client state (config, HTTP client).
     pub inner: Arc<ClientInner>,
 }
 
@@ -25,37 +45,45 @@ impl RunwayClient {
     pub fn new() -> Result<Self, RunwayError> {
         let api_key =
             std::env::var("RUNWAYML_API_SECRET").map_err(|_| RunwayError::MissingApiKey)?;
-        Ok(Self::with_api_key(api_key))
+        Self::with_api_key(api_key)
     }
 
     /// Create with explicit API key.
-    pub fn with_api_key(key: impl Into<String>) -> Self {
+    pub fn with_api_key(key: impl Into<String>) -> Result<Self, RunwayError> {
         Self::with_config(Config::new(key))
     }
 
     /// Create with full config.
-    pub fn with_config(config: Config) -> Self {
+    pub fn with_config(config: Config) -> Result<Self, RunwayError> {
         let mut headers = HeaderMap::new();
         headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
         headers.insert(
             "X-Runway-Version",
-            HeaderValue::from_str(&config.api_version).expect("valid api version header"),
+            HeaderValue::from_str(&config.api_version).map_err(|_| RunwayError::Validation {
+                message: format!(
+                    "API version contains invalid header characters: {:?}",
+                    config.api_version
+                ),
+            })?,
         );
         headers.insert(
             AUTHORIZATION,
-            HeaderValue::from_str(&format!("Bearer {}", config.api_key))
-                .expect("valid auth header"),
+            HeaderValue::from_str(&format!("Bearer {}", config.api_key)).map_err(|_| {
+                RunwayError::Validation {
+                    message: "API key contains invalid header characters".into(),
+                }
+            })?,
         );
 
         let http = reqwest::Client::builder()
             .default_headers(headers)
             .timeout(config.timeout)
             .build()
-            .expect("failed to build HTTP client");
+            .map_err(RunwayError::Http)?;
 
-        Self {
+        Ok(Self {
             inner: Arc::new(ClientInner { http, config }),
-        }
+        })
     }
 
     // ── Resource accessors ──────────────────────────────────────────────

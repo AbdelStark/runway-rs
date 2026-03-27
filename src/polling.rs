@@ -8,6 +8,11 @@ use crate::client::RunwayClient;
 use crate::error::RunwayError;
 use crate::types::task::{Task, TaskStatus};
 
+/// A handle to a submitted generation task that has not yet completed.
+///
+/// Returned by all generation resource `.create()` methods. Use
+/// [`wait_for_output`](Self::wait_for_output) to poll until completion,
+/// or [`stream_status`](Self::stream_status) to receive incremental updates.
 #[derive(Debug)]
 pub struct PendingTask {
     client: RunwayClient,

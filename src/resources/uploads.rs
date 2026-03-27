@@ -10,7 +10,10 @@ pub struct UploadsResource {
 
 impl UploadsResource {
     /// Create a new upload and get back a presigned URL.
-    pub async fn create(&self, filename: impl Into<String>) -> Result<CreateUploadResponse, RunwayError> {
+    pub async fn create(
+        &self,
+        filename: impl Into<String>,
+    ) -> Result<CreateUploadResponse, RunwayError> {
         let req = CreateUploadRequest {
             filename: filename.into(),
         };
@@ -24,7 +27,7 @@ impl UploadsResource {
             .file_name()
             .and_then(|n| n.to_str())
             .ok_or_else(|| RunwayError::Validation {
-                message: "Invalid file path".into(),
+                message: format!("Invalid file path: {}", path.display()),
             })?
             .to_string();
 
@@ -35,15 +38,25 @@ impl UploadsResource {
             .first_or_octet_stream()
             .to_string();
 
-        self.client
+        let upload_resp = self
+            .client
             .inner
             .http
             .put(&resp.upload_url)
             .header("Content-Type", mime)
             .body(data)
             .send()
-            .await?
-            .error_for_status()?;
+            .await?;
+
+        if !upload_resp.status().is_success() {
+            let status = upload_resp.status().as_u16();
+            let text = upload_resp.text().await.unwrap_or_default();
+            return Err(RunwayError::Api {
+                status,
+                message: format!("Upload to presigned URL failed: {}", text),
+                code: None,
+            });
+        }
 
         Ok(format!("runway://{}", resp.id))
     }

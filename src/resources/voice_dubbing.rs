@@ -10,8 +10,7 @@ pub struct VoiceDubbingResource {
 
 impl VoiceDubbingResource {
     pub async fn create(&self, request: VoiceDubbingRequest) -> Result<PendingTask, RunwayError> {
-        let resp: TaskCreateResponse =
-            self.client.post("/v1/voice_dubbing", &request).await?;
+        let resp: TaskCreateResponse = self.client.post("/v1/voice_dubbing", &request).await?;
         Ok(PendingTask::new(self.client.clone(), resp.id))
     }
 }

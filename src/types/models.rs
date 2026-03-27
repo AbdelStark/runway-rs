@@ -26,9 +26,10 @@ pub enum ImageModel {
     Gemini25Flash,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 pub enum VideoRatio {
     #[serde(rename = "1280:720")]
+    #[default]
     Landscape,
     #[serde(rename = "720:1280")]
     Portrait,
@@ -40,10 +41,4 @@ pub enum VideoRatio {
     Tall,
     #[serde(rename = "1584:672")]
     Ultrawide,
-}
-
-impl Default for VideoRatio {
-    fn default() -> Self {
-        Self::Landscape
-    }
 }
