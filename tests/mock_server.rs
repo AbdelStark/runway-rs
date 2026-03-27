@@ -1085,3 +1085,211 @@ async fn test_polling_task_failed() {
     let err = result.unwrap_err();
     assert!(err.to_string().contains("Content policy violation"));
 }
+
+// ── Lip Sync tests ──────────────────────────────────────────────────────
+
+#[tokio::test]
+async fn test_lip_sync_create() {
+    let mock_server = MockServer::start().await;
+
+    Mock::given(method("POST"))
+        .and(path("/v1/lip_sync"))
+        .and(header("Authorization", "Bearer test-api-key-12345"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "id": "aa0e8400-e29b-41d4-a716-446655440000"
+        })))
+        .expect(1)
+        .mount(&mock_server)
+        .await;
+
+    let client = RunwayClient::with_config(test_config(&mock_server.uri())).unwrap();
+
+    let pending = client
+        .lip_sync()
+        .create(LipSyncRequest::new(
+            VideoModel::Gen45,
+            MediaInput::from_url("https://example.com/video.mp4"),
+            MediaInput::from_url("https://example.com/audio.wav"),
+        ))
+        .await
+        .unwrap();
+
+    assert_eq!(
+        pending.id().to_string(),
+        "aa0e8400-e29b-41d4-a716-446655440000"
+    );
+}
+
+#[tokio::test]
+async fn test_lip_sync_create_with_options() {
+    let mock_server = MockServer::start().await;
+
+    Mock::given(method("POST"))
+        .and(path("/v1/lip_sync"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "id": "bb0e8400-e29b-41d4-a716-446655440000"
+        })))
+        .expect(1)
+        .mount(&mock_server)
+        .await;
+
+    let client = RunwayClient::with_config(test_config(&mock_server.uri())).unwrap();
+
+    let pending = client
+        .lip_sync()
+        .create(
+            LipSyncRequest::new(
+                VideoModel::Gen4Turbo,
+                MediaInput::from_url("https://example.com/video.mp4"),
+                MediaInput::from_url("https://example.com/audio.wav"),
+            )
+            .max_duration(30)
+            .seed(42),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(
+        pending.id().to_string(),
+        "bb0e8400-e29b-41d4-a716-446655440000"
+    );
+}
+
+// ── Image Upscale tests ─────────────────────────────────────────────────
+
+#[tokio::test]
+async fn test_image_upscale_create() {
+    let mock_server = MockServer::start().await;
+
+    Mock::given(method("POST"))
+        .and(path("/v1/image_upscale"))
+        .and(header("Authorization", "Bearer test-api-key-12345"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "id": "cc0e8400-e29b-41d4-a716-446655440000"
+        })))
+        .expect(1)
+        .mount(&mock_server)
+        .await;
+
+    let client = RunwayClient::with_config(test_config(&mock_server.uri())).unwrap();
+
+    let pending = client
+        .image_upscale()
+        .create(ImageUpscaleRequest::new(
+            ImageModel::Gen4ImageTurbo,
+            MediaInput::from_url("https://example.com/low_res.jpg"),
+        ))
+        .await
+        .unwrap();
+
+    assert_eq!(
+        pending.id().to_string(),
+        "cc0e8400-e29b-41d4-a716-446655440000"
+    );
+}
+
+#[tokio::test]
+async fn test_image_upscale_create_with_options() {
+    let mock_server = MockServer::start().await;
+
+    Mock::given(method("POST"))
+        .and(path("/v1/image_upscale"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "id": "dd0e8400-e29b-41d4-a716-446655440000"
+        })))
+        .expect(1)
+        .mount(&mock_server)
+        .await;
+
+    let client = RunwayClient::with_config(test_config(&mock_server.uri())).unwrap();
+
+    let pending = client
+        .image_upscale()
+        .create(
+            ImageUpscaleRequest::new(
+                ImageModel::Gen4Image,
+                MediaInput::from_url("https://example.com/img.png"),
+            )
+            .resolution(4096)
+            .seed(7),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(
+        pending.id().to_string(),
+        "dd0e8400-e29b-41d4-a716-446655440000"
+    );
+}
+
+// ── Task List tests ─────────────────────────────────────────────────────
+
+#[tokio::test]
+async fn test_tasks_list() {
+    let mock_server = MockServer::start().await;
+
+    Mock::given(method("GET"))
+        .and(path("/v1/tasks"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "tasks": [
+                {
+                    "id": "550e8400-e29b-41d4-a716-446655440000",
+                    "status": "SUCCEEDED",
+                    "createdAt": "2024-01-01T00:00:00Z",
+                    "output": ["https://example.com/video.mp4"]
+                },
+                {
+                    "id": "660e8400-e29b-41d4-a716-446655440000",
+                    "status": "RUNNING",
+                    "createdAt": "2024-01-02T00:00:00Z",
+                    "progress": 0.5
+                }
+            ],
+            "hasMore": false
+        })))
+        .expect(1)
+        .mount(&mock_server)
+        .await;
+
+    let client = RunwayClient::with_config(test_config(&mock_server.uri())).unwrap();
+
+    let list = client.tasks().list(TaskListQuery::new()).await.unwrap();
+    assert_eq!(list.tasks.len(), 2);
+    assert_eq!(list.tasks[0].status, TaskStatus::Succeeded);
+    assert_eq!(list.tasks[1].status, TaskStatus::Running);
+    assert_eq!(list.has_more, Some(false));
+}
+
+#[tokio::test]
+async fn test_tasks_list_with_filters() {
+    let mock_server = MockServer::start().await;
+
+    Mock::given(method("GET"))
+        .and(wiremock::matchers::query_param("status", "RUNNING"))
+        .and(wiremock::matchers::query_param("limit", "5"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "tasks": [
+                {
+                    "id": "770e8400-e29b-41d4-a716-446655440000",
+                    "status": "RUNNING",
+                    "createdAt": "2024-03-01T00:00:00Z",
+                    "progress": 0.3
+                }
+            ],
+            "hasMore": true
+        })))
+        .expect(1)
+        .mount(&mock_server)
+        .await;
+
+    let client = RunwayClient::with_config(test_config(&mock_server.uri())).unwrap();
+
+    let list = client
+        .tasks()
+        .list(TaskListQuery::new().status(TaskStatus::Running).limit(5))
+        .await
+        .unwrap();
+    assert_eq!(list.tasks.len(), 1);
+    assert_eq!(list.tasks[0].status, TaskStatus::Running);
+    assert_eq!(list.has_more, Some(true));
+}

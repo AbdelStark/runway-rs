@@ -28,7 +28,7 @@ src/
 │   ├── common.rs       # Shared types (ContentModeration)
 │   ├── media.rs        # MediaInput — URL, base64, file input
 │   ├── models.rs       # VideoModel, ImageModel, VideoRatio enums
-│   ├── task.rs         # Task, TaskStatus, TaskCreateResponse
+│   ├── task.rs         # Task, TaskStatus, TaskList, TaskListQuery, TaskCreateResponse
 │   ├── generation.rs   # All generation request types
 │   ├── avatar.rs       # Avatar types
 │   ├── document.rs     # Document types
@@ -46,6 +46,8 @@ src/
     ├── speech_to_speech.rs
     ├── sound_effect.rs
     ├── character_performance.rs
+    ├── lip_sync.rs
+    ├── image_upscale.rs
     ├── voice_dubbing.rs
     ├── voice_isolation.rs
     ├── uploads.rs
