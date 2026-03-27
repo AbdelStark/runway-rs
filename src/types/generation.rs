@@ -588,7 +588,7 @@ pub struct CreateUploadRequest {
     pub filename: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateUploadResponse {
     pub id: String,

@@ -1,8 +1,9 @@
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+#[non_exhaustive]
 pub enum TaskStatus {
     Pending,
     Throttled,
@@ -11,7 +12,7 @@ pub enum TaskStatus {
     Failed,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct Task {
     pub id: Uuid,
@@ -27,12 +28,34 @@ pub struct Task {
     pub progress: Option<f64>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+impl Task {
+    /// Returns the output URLs if the task succeeded and has output.
+    pub fn output_urls(&self) -> Option<&[String]> {
+        self.output.as_deref()
+    }
+
+    /// Returns `true` if the task has reached a terminal state (succeeded or failed).
+    pub fn is_terminal(&self) -> bool {
+        matches!(self.status, TaskStatus::Succeeded | TaskStatus::Failed)
+    }
+
+    /// Returns `true` if the task succeeded.
+    pub fn is_succeeded(&self) -> bool {
+        self.status == TaskStatus::Succeeded
+    }
+
+    /// Returns `true` if the task failed.
+    pub fn is_failed(&self) -> bool {
+        self.status == TaskStatus::Failed
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct TaskCreateResponse {
     pub id: Uuid,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct TaskList {
     pub tasks: Vec<Task>,

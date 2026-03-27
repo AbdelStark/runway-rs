@@ -742,3 +742,140 @@ fn test_workflow_serialize_roundtrip() {
     let serialized = serde_json::to_value(&wf).unwrap();
     assert_eq!(serialized["id"], "wf_123");
 }
+
+// ── Display impl tests ──────────────────────────────────────────────────
+
+#[test]
+fn test_video_model_display() {
+    assert_eq!(VideoModel::Gen45.to_string(), "gen4.5");
+    assert_eq!(VideoModel::Gen4Turbo.to_string(), "gen4_turbo");
+    assert_eq!(VideoModel::Gen3aTurbo.to_string(), "gen3a_turbo");
+    assert_eq!(VideoModel::Veo31.to_string(), "veo3.1");
+    assert_eq!(VideoModel::Veo31Fast.to_string(), "veo3.1_fast");
+    assert_eq!(VideoModel::Veo3.to_string(), "veo3");
+}
+
+#[test]
+fn test_image_model_display() {
+    assert_eq!(ImageModel::Gen4ImageTurbo.to_string(), "gen4_image_turbo");
+    assert_eq!(ImageModel::Gen4Image.to_string(), "gen4_image");
+    assert_eq!(ImageModel::Gemini25Flash.to_string(), "gemini_2.5_flash");
+}
+
+#[test]
+fn test_video_ratio_display() {
+    assert_eq!(VideoRatio::Landscape.to_string(), "1280:720");
+    assert_eq!(VideoRatio::Portrait.to_string(), "720:1280");
+    assert_eq!(VideoRatio::Wide.to_string(), "1104:832");
+    assert_eq!(VideoRatio::Square.to_string(), "960:960");
+    assert_eq!(VideoRatio::Tall.to_string(), "832:1104");
+    assert_eq!(VideoRatio::Ultrawide.to_string(), "1584:672");
+}
+
+// ── Task convenience method tests ───────────────────────────────────────
+
+#[test]
+fn test_task_is_terminal() {
+    let succeeded = Task {
+        id: uuid::Uuid::new_v4(),
+        status: TaskStatus::Succeeded,
+        created_at: "2024-01-01T00:00:00Z".to_string(),
+        output: Some(vec!["https://example.com/video.mp4".to_string()]),
+        failure: None,
+        failure_code: None,
+        progress: Some(1.0),
+    };
+    assert!(succeeded.is_terminal());
+    assert!(succeeded.is_succeeded());
+    assert!(!succeeded.is_failed());
+
+    let failed = Task {
+        id: uuid::Uuid::new_v4(),
+        status: TaskStatus::Failed,
+        created_at: "2024-01-01T00:00:00Z".to_string(),
+        output: None,
+        failure: Some("Error".to_string()),
+        failure_code: Some("ERR".to_string()),
+        progress: None,
+    };
+    assert!(failed.is_terminal());
+    assert!(!failed.is_succeeded());
+    assert!(failed.is_failed());
+
+    let running = Task {
+        id: uuid::Uuid::new_v4(),
+        status: TaskStatus::Running,
+        created_at: "2024-01-01T00:00:00Z".to_string(),
+        output: None,
+        failure: None,
+        failure_code: None,
+        progress: Some(0.5),
+    };
+    assert!(!running.is_terminal());
+    assert!(!running.is_succeeded());
+    assert!(!running.is_failed());
+}
+
+#[test]
+fn test_task_output_urls() {
+    let task_with_output = Task {
+        id: uuid::Uuid::new_v4(),
+        status: TaskStatus::Succeeded,
+        created_at: "2024-01-01T00:00:00Z".to_string(),
+        output: Some(vec![
+            "https://cdn.runway.com/video1.mp4".to_string(),
+            "https://cdn.runway.com/video2.mp4".to_string(),
+        ]),
+        failure: None,
+        failure_code: None,
+        progress: Some(1.0),
+    };
+    let urls = task_with_output.output_urls().unwrap();
+    assert_eq!(urls.len(), 2);
+    assert_eq!(urls[0], "https://cdn.runway.com/video1.mp4");
+
+    let task_no_output = Task {
+        id: uuid::Uuid::new_v4(),
+        status: TaskStatus::Running,
+        created_at: "2024-01-01T00:00:00Z".to_string(),
+        output: None,
+        failure: None,
+        failure_code: None,
+        progress: Some(0.3),
+    };
+    assert!(task_no_output.output_urls().is_none());
+}
+
+// ── PartialEq tests ────────────────────────────────────────────────────
+
+#[test]
+fn test_model_enums_eq_and_hash() {
+    use std::collections::HashSet;
+
+    let mut models = HashSet::new();
+    models.insert(VideoModel::Gen45);
+    models.insert(VideoModel::Gen4Turbo);
+    models.insert(VideoModel::Gen45); // duplicate
+    assert_eq!(models.len(), 2);
+
+    let mut ratios = HashSet::new();
+    ratios.insert(VideoRatio::Landscape);
+    ratios.insert(VideoRatio::Portrait);
+    assert_eq!(ratios.len(), 2);
+}
+
+#[test]
+fn test_task_partial_eq() {
+    let id = uuid::Uuid::parse_str("550e8400-e29b-41d4-a716-446655440000").unwrap();
+    let task1 = Task {
+        id,
+        status: TaskStatus::Succeeded,
+        created_at: "2024-01-01".to_string(),
+        output: Some(vec!["url".to_string()]),
+        failure: None,
+        failure_code: None,
+        progress: Some(1.0),
+    };
+    let task2 = task1.clone();
+    assert_eq!(task1, task2);
+}

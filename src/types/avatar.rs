@@ -58,7 +58,7 @@ impl UpdateAvatarRequest {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct Avatar {
     pub id: String,
@@ -69,7 +69,7 @@ pub struct Avatar {
     pub created_at: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct AvatarList {
     pub avatars: Vec<Avatar>,
