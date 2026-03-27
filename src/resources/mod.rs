@@ -1,3 +1,10 @@
+//! Resource clients exposed by [`RunwayClient`](crate::RunwayClient).
+//!
+//! Each resource groups a portion of the Runway API behind typed request and
+//! response models. Construct resources through methods on
+//! [`RunwayClient`](crate::RunwayClient)
+//! rather than instantiating them directly.
+
 pub mod avatars;
 pub mod character_performance;
 pub mod documents;

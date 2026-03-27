@@ -1,9 +1,11 @@
-//! Unofficial Rust SDK for the Runway API.
+#![forbid(unsafe_code)]
+#![cfg_attr(docsrs, feature(doc_auto_cfg, doc_cfg))]
+//! Async Rust SDK for the [Runway API](https://docs.dev.runwayml.com/).
 //!
-//! Provides an async client for AI video, image, and audio generation
-//! via the [Runway API](https://docs.dev.runwayml.com/).
+//! `runway-sdk` provides typed request models, multipart upload helpers,
+//! task and workflow polling, and per-request overrides on top of `reqwest`.
 //!
-//! # Quick start
+//! # Quick Start
 //!
 //! ```no_run
 //! use runway_sdk::{RunwayClient, TextToVideoGen45Request, VideoRatio};
@@ -29,14 +31,14 @@
 //!
 //! # Authentication
 //!
-//! Set the `RUNWAYML_API_SECRET` environment variable, or pass the key explicitly:
+//! Set `RUNWAYML_API_SECRET`, or pass the key explicitly:
 //!
 //! ```no_run
 //! # use runway_sdk::RunwayClient;
-//! // From environment variable:
+//! // Read from RUNWAYML_API_SECRET
 //! let client = RunwayClient::new().unwrap();
 //!
-//! // With explicit key:
+//! // Or pass the key directly
 //! let client = RunwayClient::with_api_key("sk_test_...").unwrap();
 //! ```
 //!
@@ -54,6 +56,51 @@
 //!     .poll_interval(Duration::from_secs(10));
 //!
 //! let client = RunwayClient::with_config(config).unwrap();
+//! ```
+//!
+//! # Per-Request Overrides
+//!
+//! Use [`RequestOptions`] when one call needs different headers, query params,
+//! timeouts, or retry behavior:
+//!
+//! ```no_run
+//! use runway_sdk::{RequestOptions, RunwayClient};
+//! use std::time::Duration;
+//!
+//! # async fn run() -> Result<(), Box<dyn std::error::Error>> {
+//! let client = RunwayClient::new()?;
+//! let options = RequestOptions::new()
+//!     .timeout(Duration::from_secs(30))
+//!     .idempotency_key("req_123");
+//!
+//! let response = client
+//!     .organization()
+//!     .retrieve_with_options(options)
+//!     .await?;
+//! # let _ = response;
+//! # Ok(())
+//! # }
+//! ```
+//!
+//! # Raw Responses
+//!
+//! Methods ending in `_with_options` return [`WithResponse`] so you can inspect
+//! headers and status codes alongside the parsed payload:
+//!
+//! ```no_run
+//! use runway_sdk::{RequestOptions, RunwayClient};
+//!
+//! # async fn run() -> Result<(), Box<dyn std::error::Error>> {
+//! let client = RunwayClient::new()?;
+//! let response = client
+//!     .organization()
+//!     .retrieve_with_options(RequestOptions::default())
+//!     .await?;
+//!
+//! println!("status={}", response.response.status);
+//! println!("credits={}", response.data.credit_balance);
+//! # Ok(())
+//! # }
 //! ```
 //!
 //! # Resources
@@ -80,11 +127,13 @@
 //! | [`workflows()`](RunwayClient::workflows) | List and run workflows |
 //! | [`organization()`](RunwayClient::organization) | Organization info and usage |
 //!
-//! Unofficial endpoints such as `lip_sync`, `image_upscale`, and task list or
-//! cancel helpers are available only when the crate is built with the
-//! `unstable-endpoints` feature.
+//! # Feature Flags
 //!
-//! # Task lifecycle
+//! - `unstable-endpoints`: enables `lip_sync`, `image_upscale`, and task
+//!   list/cancel helpers that are intentionally not part of the default surface.
+//! - `live-tests`: enables the real API smoke suite in `tests/live_api.rs`.
+//!
+//! # Task Lifecycle
 //!
 //! Generation methods return a [`PendingTask`] that can be polled or streamed.
 //! Workflow runs can return a [`PendingWorkflowInvocation`] via
@@ -112,7 +161,7 @@
 //! # }
 //! ```
 //!
-//! # Error handling
+//! # Error Handling
 //!
 //! All methods return [`Result<T, RunwayError>`]. The error type covers API
 //! errors, rate limiting, task or workflow failures, and transport issues:

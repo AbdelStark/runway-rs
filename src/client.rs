@@ -14,33 +14,45 @@ use crate::resources::*;
 /// Response metadata exposed alongside parsed bodies.
 #[derive(Debug, Clone)]
 pub struct ResponseMetadata {
+    /// HTTP status code returned by the Runway API.
     pub status: u16,
+    /// Response headers returned by the Runway API.
     pub headers: HeaderMap,
 }
 
 /// Parsed response data paired with transport metadata.
 #[derive(Debug, Clone)]
 pub struct WithResponse<T> {
+    /// Parsed response body.
     pub data: T,
+    /// Raw transport metadata for the request.
     pub response: ResponseMetadata,
 }
 
 /// Per-request overrides for headers, query params, timeout, retries, and base URL.
 #[derive(Debug, Clone, Default)]
 pub struct RequestOptions {
+    /// Extra headers merged into the request.
     pub headers: HeaderMap,
+    /// Query string pairs appended to the request URL.
     pub query: Vec<(String, String)>,
+    /// Request-specific timeout override.
     pub timeout: Option<Duration>,
+    /// Request-specific retry budget override.
     pub max_retries: Option<u32>,
+    /// Idempotency key sent as `Idempotency-Key` when present.
     pub idempotency_key: Option<String>,
+    /// Base URL override for this request.
     pub base_url: Option<String>,
 }
 
 impl RequestOptions {
+    /// Create an empty set of request overrides.
     pub fn new() -> Self {
         Self::default()
     }
 
+    /// Add a header to this request.
     pub fn header(
         mut self,
         name: impl AsRef<str>,
@@ -56,26 +68,31 @@ impl RequestOptions {
         Ok(self)
     }
 
+    /// Append a query parameter to this request.
     pub fn query_param(mut self, key: impl Into<String>, value: impl Into<String>) -> Self {
         self.query.push((key.into(), value.into()));
         self
     }
 
+    /// Override the request timeout.
     pub fn timeout(mut self, timeout: Duration) -> Self {
         self.timeout = Some(timeout);
         self
     }
 
+    /// Override the retry budget for this request.
     pub fn max_retries(mut self, max_retries: u32) -> Self {
         self.max_retries = Some(max_retries);
         self
     }
 
+    /// Attach an idempotency key to this request.
     pub fn idempotency_key(mut self, idempotency_key: impl Into<String>) -> Self {
         self.idempotency_key = Some(idempotency_key.into());
         self
     }
 
+    /// Override the API base URL for this request.
     pub fn base_url(mut self, base_url: impl Into<String>) -> Self {
         self.base_url = Some(base_url.into());
         self
@@ -105,19 +122,19 @@ pub struct RunwayClient {
 }
 
 impl RunwayClient {
-    /// Create from RUNWAYML_API_SECRET env var.
+    /// Create a client from the `RUNWAYML_API_SECRET` environment variable.
     pub fn new() -> Result<Self, RunwayError> {
         let api_key =
             std::env::var("RUNWAYML_API_SECRET").map_err(|_| RunwayError::MissingApiKey)?;
         Self::with_api_key(api_key)
     }
 
-    /// Create with explicit API key.
+    /// Create a client with an explicit API key.
     pub fn with_api_key(key: impl Into<String>) -> Result<Self, RunwayError> {
         Self::with_config(Config::new(key))
     }
 
-    /// Create with full config.
+    /// Create a client from a fully customized [`Config`].
     pub fn with_config(config: Config) -> Result<Self, RunwayError> {
         let mut headers = HeaderMap::new();
         headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
@@ -151,6 +168,10 @@ impl RunwayClient {
         })
     }
 
+    /// Clone this client with per-request defaults applied to the derived instance.
+    ///
+    /// This is useful when a subset of requests should share alternate headers,
+    /// query parameters, retry limits, or a different base URL.
     pub fn with_options(&self, options: RequestOptions) -> Result<Self, RunwayError> {
         let mut config = self.inner.config.clone();
 

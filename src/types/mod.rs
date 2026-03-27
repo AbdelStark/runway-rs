@@ -1,3 +1,8 @@
+//! Strongly typed request and response models for the Runway API.
+//!
+//! The crate re-exports these types at the root so applications can import
+//! request builders, enums, and response payloads directly from `runway_sdk::*`.
+
 pub mod avatar;
 pub mod common;
 pub mod document;

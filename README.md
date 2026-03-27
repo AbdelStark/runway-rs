@@ -1,46 +1,86 @@
-<h1 align="center">runway-rs</h1>
-<p align="center">Typed async Rust client for submitting Runway generations, polling task output, uploading media, and running workflows.</p>
-<p align="center">
-  <a href="https://github.com/AbdelStark/runway-rs/actions/workflows/ci.yml"><img src="https://github.com/AbdelStark/runway-rs/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
-  <img src="https://img.shields.io/badge/rust-2021-orange" alt="Rust 2021" />
-  <img src="https://img.shields.io/badge/tokio-async-1f6feb" alt="Tokio" />
-  <img src="https://img.shields.io/badge/version-0.1.0-7c3aed" alt="Version 0.1.0" />
-  <img src="https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue" alt="License" />
-</p>
+# runway-sdk
+
+Async Rust SDK for the Runway API with typed generation requests, uploads, task polling, and workflow invocations.
+
+[![crates.io](https://img.shields.io/crates/v/runway-sdk.svg)](https://crates.io/crates/runway-sdk)
+[![docs.rs](https://img.shields.io/docsrs/runway-sdk)](https://docs.rs/runway-sdk)
+[![CI](https://github.com/AbdelStark/runway-rs/actions/workflows/ci.yml/badge.svg)](https://github.com/AbdelStark/runway-rs/actions/workflows/ci.yml)
+[![License](https://img.shields.io/crates/l/runway-sdk)](./LICENSE-MIT)
+
+![runway-sdk preview](./docs/terminal-preview.svg)
+
+## How It Works
+
+```text
+prompt / asset bytes
+        |
+        v
++-----------------------------+
+| typed request builders      |
+| TextToVideoGen45Request     |
+| CreateEphemeralUploadRequest|
++-----------------------------+
+        |
+        v
++-----------------------------+
+| RunwayClient                |
+| reqwest + retries + headers |
++-----------------------------+
+        |
+        v
++-----------------------------+      +-----------------------------+
+| /v1/tasks                   | <--> | PendingTask                 |
+| /v1/workflows               |      | wait_for_output()           |
+| /v1/uploads                 |      | stream_status()             |
++-----------------------------+      +-----------------------------+
+        |
+        v
+output URLs / typed workflow results / response metadata
+```
 
 ## Quick Start
 
-1. Clone and build.
+1. Create a project and add the crate.
 
 ```bash
-git clone https://github.com/AbdelStark/runway-rs.git
-cd runway-rs
-cargo build
+cargo new runway-smoke
+cd runway-smoke
+cargo add runway-sdk
+cargo add tokio --features macros,rt-multi-thread
 ```
 
-2. Set your Runway secret.
+2. Set your Runway API secret.
 
 ```bash
-cp .env.example .env
-$EDITOR .env
+export RUNWAYML_API_SECRET=your_secret_here
 ```
 
-3. Run the safe smoke test example.
+3. Run a safe organization smoke test.
 
 ```bash
-set -a; source .env; set +a
-cargo run --example organization
+cat > src/main.rs <<'RS'
+use runway_sdk::RunwayClient;
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let client = RunwayClient::new()?;
+    let org = client.organization().retrieve().await?;
+
+    println!("Credit balance: {}", org.credit_balance);
+    Ok(())
+}
+RS
+
+cargo run
 ```
 
 ```text
 Credit balance: <number>
-Usage models: <count>
-Usage rows: <count>
 ```
 
 ## The Good Stuff
 
-### 1. Submit a text-to-video job and wait for the final asset
+### 1. Submit text-to-video and wait for the final asset
 
 ```rust
 use runway_sdk::{RunwayClient, TextToVideoGen45Request, VideoRatio};
@@ -65,11 +105,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
-- `TextToVideoGen45Request` keeps the request model-specific instead of flattening everything into one permissive struct.
+- `TextToVideoGen45Request` keeps request fields model-specific instead of flattening everything into one permissive struct.
 - `VideoRatio::Landscape` maps to `1280:720`.
-- `wait_for_output()` polls until the task reaches `SUCCEEDED`, `FAILED`, or `CANCELLED`.
+- `wait_for_output()` exits on `SUCCEEDED`, `FAILED`, or `CANCELLED`.
 
-### 2. Upload bytes once, reuse the returned `runway://` URI
+### 2. Upload media once and reuse the returned `runway://` URI
 
 ```rust
 use runway_sdk::{
@@ -103,11 +143,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
-- `create_ephemeral()` performs the official placeholder + multipart upload flow.
+- `create_ephemeral()` follows the placeholder-creation plus multipart upload flow used by the official SDK.
 - `upload.uri` is the `runway://...` handle you pass to downstream generation endpoints.
-- This path can be gated by Runway billing rules on unfunded accounts.
+- Upload creation can be blocked by Runway billing rules on unfunded accounts.
 
-### 3. Start a workflow without hand-rolling nested JSON
+### 3. Launch workflows with typed node output values
 
 ```rust
 use runway_sdk::{PrimitiveNodeValue, RunWorkflowRequest, RunwayClient, WorkflowNodeOutputValue};
@@ -117,7 +157,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let client = RunwayClient::new()?;
     let workflows = client.workflows().list().await?;
 
-    let version = &workflows.data[0].versions[0];
+    let version = workflows
+        .data
+        .first()
+        .and_then(|workflow| workflow.versions.first())
+        .ok_or_else(|| {
+            std::io::Error::new(std::io::ErrorKind::NotFound, "no workflow versions available")
+        })?;
+
     let invocation = client
         .workflows()
         .run_pending(
@@ -137,8 +184,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
-- `node_output()` builds the `nodeOutputs` map with typed values.
-- `run_pending()` returns a `PendingWorkflowInvocation` you can poll just like a generation task.
+- `node_output()` builds the `nodeOutputs` map without hand-rolled JSON.
+- `run_pending()` returns a `PendingWorkflowInvocation` that supports the same polling API as generation tasks.
 - `workflow_invocations().pending(id)` is the direct entry point when you already have an invocation ID.
 
 ## Configuration / API
@@ -153,12 +200,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 | `Config::poll_interval` | `5s` | Delay between task and workflow polls. |
 | `Config::max_poll_duration` | `600s` | Max total wait time for `wait_for_output()`. |
 | `RequestOptions` | none | Per-request headers, query params, timeout, retries, idempotency key, and base URL override. |
-| `live-tests` | off | Enables `tests/live_api.rs` for real API smoke tests. |
 | `unstable-endpoints` | off | Enables `lip_sync`, `image_upscale`, and task list/cancel helpers. |
 
 ## Deployment / Integration
 
-Run the live smoke suite in GitHub Actions with a real Runway secret:
+Run a live smoke test in GitHub Actions with a real Runway secret:
 
 ```yaml
 name: runway-live-smoke

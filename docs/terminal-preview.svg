@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="720" viewBox="0 0 1200 720" fill="none">
+  <rect width="1200" height="720" fill="#F4F1EA"/>
+  <rect x="48" y="56" width="1104" height="608" rx="24" fill="#FFFDF9" stroke="#1F2937" stroke-width="4"/>
+  <rect x="48" y="56" width="1104" height="72" rx="24" fill="#1F2937"/>
+  <circle cx="96" cy="92" r="10" fill="#F97316"/>
+  <circle cx="128" cy="92" r="10" fill="#EAB308"/>
+  <circle cx="160" cy="92" r="10" fill="#22C55E"/>
+  <text x="600" y="101" fill="#F9FAFB" font-family="ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, Liberation Mono, monospace" font-size="28" text-anchor="middle">runway-sdk • typed Rust client for Runway</text>
+
+  <rect x="88" y="168" width="480" height="440" rx="18" fill="#111827"/>
+  <text x="116" y="212" fill="#93C5FD" font-family="ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, Liberation Mono, monospace" font-size="24">cargo run</text>
+  <text x="116" y="264" fill="#F9FAFB" font-family="ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, Liberation Mono, monospace" font-size="24">let upload = client</text>
+  <text x="116" y="300" fill="#F9FAFB" font-family="ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, Liberation Mono, monospace" font-size="24">    .uploads()</text>
+  <text x="116" y="336" fill="#F9FAFB" font-family="ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, Liberation Mono, monospace" font-size="24">    .create_ephemeral(...)</text>
+  <text x="116" y="388" fill="#A7F3D0" font-family="ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, Liberation Mono, monospace" font-size="24">runway://file-abc123</text>
+  <text x="116" y="440" fill="#F9FAFB" font-family="ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, Liberation Mono, monospace" font-size="24">let task = client</text>
+  <text x="116" y="476" fill="#F9FAFB" font-family="ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, Liberation Mono, monospace" font-size="24">    .image_to_video()</text>
+  <text x="116" y="512" fill="#F9FAFB" font-family="ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, Liberation Mono, monospace" font-size="24">    .create(...)</text>
+  <text x="116" y="564" fill="#FCA5A5" font-family="ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, Liberation Mono, monospace" font-size="24">    .wait_for_output().await?;</text>
+
+  <rect x="632" y="168" width="480" height="440" rx="18" fill="#FFF7ED" stroke="#EA580C" stroke-width="4"/>
+  <text x="664" y="216" fill="#9A3412" font-family="ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, Liberation Mono, monospace" font-size="24">typed request</text>
+  <text x="664" y="272" fill="#111827" font-family="ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, Liberation Mono, monospace" font-size="26">TextToVideoGen45Request</text>
+  <text x="664" y="324" fill="#111827" font-family="ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, Liberation Mono, monospace" font-size="26">CreateEphemeralUploadRequest</text>
+  <text x="664" y="376" fill="#111827" font-family="ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, Liberation Mono, monospace" font-size="26">PendingTask</text>
+  <text x="664" y="428" fill="#111827" font-family="ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, Liberation Mono, monospace" font-size="26">PendingWorkflowInvocation</text>
+  <text x="664" y="512" fill="#9A3412" font-family="ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, Liberation Mono, monospace" font-size="24">retries • uploads • polling • workflows</text>
+  <text x="664" y="564" fill="#111827" font-family="ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, Liberation Mono, monospace" font-size="24">crate: runway-sdk</text>
+</svg>

@@ -31,18 +31,28 @@ pub const DEFAULT_MAX_POLL_DURATION: Duration = Duration::from_secs(600);
 /// ```
 #[derive(Clone)]
 pub struct Config {
+    /// Bearer token used to authenticate with the Runway API.
     pub api_key: String,
+    /// Base URL for API requests.
     pub base_url: String,
+    /// Value sent in the `X-Runway-Version` header.
     pub api_version: String,
+    /// Default timeout applied to each HTTP request.
     pub timeout: Duration,
+    /// Maximum number of retry attempts for retryable requests.
     pub max_retries: u32,
+    /// Delay between polls when waiting on tasks or workflow invocations.
     pub poll_interval: Duration,
+    /// Maximum time to wait when polling for a terminal result.
     pub max_poll_duration: Duration,
+    /// Headers merged into every request from this client.
     pub default_headers: HeaderMap,
+    /// Query parameters merged into every request from this client.
     pub default_query: Vec<(String, String)>,
 }
 
 impl Config {
+    /// Create a configuration with Runway defaults and the provided API key.
     pub fn new(api_key: impl Into<String>) -> Self {
         Self {
             api_key: api_key.into(),
@@ -57,36 +67,43 @@ impl Config {
         }
     }
 
+    /// Override the API base URL.
     pub fn base_url(mut self, url: impl Into<String>) -> Self {
         self.base_url = url.into();
         self
     }
 
+    /// Override the `X-Runway-Version` header value.
     pub fn api_version(mut self, version: impl Into<String>) -> Self {
         self.api_version = version.into();
         self
     }
 
+    /// Override the default request timeout.
     pub fn timeout(mut self, timeout: Duration) -> Self {
         self.timeout = timeout;
         self
     }
 
+    /// Override the default retry budget.
     pub fn max_retries(mut self, retries: u32) -> Self {
         self.max_retries = retries;
         self
     }
 
+    /// Override the default poll interval for pending tasks and workflows.
     pub fn poll_interval(mut self, interval: Duration) -> Self {
         self.poll_interval = interval;
         self
     }
 
+    /// Override the default polling deadline for pending tasks and workflows.
     pub fn max_poll_duration(mut self, duration: Duration) -> Self {
         self.max_poll_duration = duration;
         self
     }
 
+    /// Add a header that will be sent with every request from this client.
     pub fn default_header(
         mut self,
         name: impl AsRef<str>,
@@ -102,6 +119,7 @@ impl Config {
         Ok(self)
     }
 
+    /// Add a query parameter that will be sent with every request from this client.
     pub fn default_query_param(mut self, key: impl Into<String>, value: impl Into<String>) -> Self {
         self.default_query.push((key.into(), value.into()));
         self

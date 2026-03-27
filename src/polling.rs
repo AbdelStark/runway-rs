@@ -10,28 +10,36 @@ use crate::error::RunwayError;
 use crate::types::task::{Task, TaskStatus};
 use crate::types::workflow::{WorkflowInvocation, WorkflowInvocationStatus};
 
+/// Overrides for task and workflow polling behavior.
 #[derive(Debug, Clone, Default)]
 pub struct WaitOptions {
+    /// Delay between status polls.
     pub poll_interval: Option<Duration>,
+    /// Maximum time to wait before returning a timeout error.
     pub timeout: Option<Duration>,
+    /// Cancellation token that aborts polling when triggered.
     pub cancellation_token: Option<CancellationToken>,
 }
 
 impl WaitOptions {
+    /// Create an empty set of polling overrides.
     pub fn new() -> Self {
         Self::default()
     }
 
+    /// Override the poll interval.
     pub fn poll_interval(mut self, poll_interval: Duration) -> Self {
         self.poll_interval = Some(poll_interval);
         self
     }
 
+    /// Override the maximum wait duration.
     pub fn timeout(mut self, timeout: Duration) -> Self {
         self.timeout = Some(timeout);
         self
     }
 
+    /// Abort polling when this token is cancelled.
     pub fn cancellation_token(mut self, cancellation_token: CancellationToken) -> Self {
         self.cancellation_token = Some(cancellation_token);
         self
@@ -66,14 +74,17 @@ impl PendingTask {
         Self { client, task_id }
     }
 
+    /// Return the Runway task identifier.
     pub fn id(&self) -> Uuid {
         self.task_id
     }
 
+    /// Poll until the task reaches a terminal state using client defaults.
     pub async fn wait_for_output(self) -> Result<Task, RunwayError> {
         self.wait_with_options(WaitOptions::default()).await
     }
 
+    /// Poll with explicit interval and timeout overrides.
     pub async fn wait_with_config(
         self,
         poll_interval: Duration,
@@ -87,6 +98,7 @@ impl PendingTask {
         .await
     }
 
+    /// Poll with fine-grained [`WaitOptions`] overrides.
     pub async fn wait_with_options(self, options: WaitOptions) -> Result<Task, RunwayError> {
         let poll_interval = options
             .poll_interval
@@ -135,10 +147,12 @@ impl PendingTask {
         }
     }
 
+    /// Stream task snapshots until the task reaches a terminal state.
     pub fn stream_status(self) -> impl Stream<Item = Result<Task, RunwayError>> {
         self.stream_status_with_options(WaitOptions::default())
     }
 
+    /// Stream task snapshots with custom polling options.
     pub fn stream_status_with_options(
         self,
         options: WaitOptions,
@@ -187,14 +201,17 @@ impl PendingWorkflowInvocation {
         }
     }
 
+    /// Return the workflow invocation identifier.
     pub fn id(&self) -> &str {
         &self.invocation_id
     }
 
+    /// Poll until the workflow invocation reaches a terminal state using client defaults.
     pub async fn wait_for_output(self) -> Result<WorkflowInvocation, RunwayError> {
         self.wait_with_options(WaitOptions::default()).await
     }
 
+    /// Poll with explicit interval and timeout overrides.
     pub async fn wait_with_config(
         self,
         poll_interval: Duration,
@@ -208,6 +225,7 @@ impl PendingWorkflowInvocation {
         .await
     }
 
+    /// Poll with fine-grained [`WaitOptions`] overrides.
     pub async fn wait_with_options(
         self,
         options: WaitOptions,
@@ -264,10 +282,12 @@ impl PendingWorkflowInvocation {
         }
     }
 
+    /// Stream workflow invocation snapshots until the invocation is terminal.
     pub fn stream_status(self) -> impl Stream<Item = Result<WorkflowInvocation, RunwayError>> {
         self.stream_status_with_options(WaitOptions::default())
     }
 
+    /// Stream workflow invocation snapshots with custom polling options.
     pub fn stream_status_with_options(
         self,
         options: WaitOptions,

@@ -5,14 +5,23 @@ use uuid::Uuid;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[non_exhaustive]
 pub enum ApiErrorKind {
+    /// The request payload or parameters were invalid.
     BadRequest,
+    /// Authentication failed.
     Authentication,
+    /// The authenticated principal lacks permission to perform the action.
     PermissionDenied,
+    /// The requested resource does not exist.
     NotFound,
+    /// The request conflicted with current server state.
     Conflict,
+    /// The request was syntactically valid but semantically rejected.
     UnprocessableEntity,
+    /// The caller is being rate limited.
     RateLimited,
+    /// The server failed while processing the request.
     InternalServer,
+    /// The response did not map cleanly onto a known Runway error class.
     Unknown,
 }
 
@@ -92,6 +101,7 @@ pub enum RunwayError {
 }
 
 impl RunwayError {
+    /// Return the HTTP status code when one is available.
     pub fn status(&self) -> Option<u16> {
         match self {
             Self::Api { status, .. } => Some(*status),
@@ -101,6 +111,7 @@ impl RunwayError {
         }
     }
 
+    /// Return the response headers for API-derived errors.
     pub fn headers(&self) -> Option<&HeaderMap> {
         match self {
             Self::Api { headers, .. } => Some(headers.as_ref()),
@@ -109,6 +120,7 @@ impl RunwayError {
         }
     }
 
+    /// Return the classified Runway API error kind when available.
     pub fn api_kind(&self) -> Option<ApiErrorKind> {
         match self {
             Self::Api { kind, .. } => Some(*kind),
@@ -118,6 +130,7 @@ impl RunwayError {
         }
     }
 
+    /// Return the parsed `Retry-After` delay for rate-limit errors.
     pub fn retry_after(&self) -> Option<Duration> {
         match self {
             Self::RateLimited { retry_after, .. } => *retry_after,

@@ -2,11 +2,29 @@
 name = "runway-sdk"
 version = "0.1.0"
 edition = "2021"
-description = "Unofficial Rust SDK for the Runway API — AI video generation, world models, and more"
+description = "Async Rust SDK for the Runway API with typed generation requests, uploads, task polling, and workflows."
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/AbdelStark/runway-rs"
-keywords = ["runway", "ai", "video-generation", "generative-ai", "sdk"]
-categories = ["api-bindings", "multimedia::video"]
+homepage = "https://github.com/AbdelStark/runway-rs"
+documentation = "https://docs.rs/runway-sdk"
+readme = "README.md"
+keywords = ["runway", "runwayml", "video", "generative-ai", "api-client"]
+categories = ["api-bindings", "asynchronous", "multimedia::video"]
+include = [
+    "src/**",
+    "examples/**",
+    "tests/**",
+    "docs/terminal-preview.svg",
+    "README.md",
+    "LICENSE-APACHE",
+    "LICENSE-MIT",
+    "Cargo.toml",
+]
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
+targets = ["x86_64-unknown-linux-gnu"]
 
 [dependencies]
 reqwest = { version = "0.12", features = ["json", "multipart", "stream"] }
