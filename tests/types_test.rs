@@ -865,6 +865,29 @@ fn test_model_enums_eq_and_hash() {
 }
 
 #[test]
+fn test_task_status_display() {
+    assert_eq!(TaskStatus::Pending.to_string(), "PENDING");
+    assert_eq!(TaskStatus::Throttled.to_string(), "THROTTLED");
+    assert_eq!(TaskStatus::Running.to_string(), "RUNNING");
+    assert_eq!(TaskStatus::Succeeded.to_string(), "SUCCEEDED");
+    assert_eq!(TaskStatus::Failed.to_string(), "FAILED");
+}
+
+#[test]
+fn test_generation_request_partial_eq() {
+    let req1 = TextToVideoRequest::new(VideoModel::Gen45, "A sunset")
+        .duration(10)
+        .seed(42);
+    let req2 = TextToVideoRequest::new(VideoModel::Gen45, "A sunset")
+        .duration(10)
+        .seed(42);
+    assert_eq!(req1, req2);
+
+    let req3 = TextToVideoRequest::new(VideoModel::Gen45, "A sunrise");
+    assert_ne!(req1, req3);
+}
+
+#[test]
 fn test_task_partial_eq() {
     let id = uuid::Uuid::parse_str("550e8400-e29b-41d4-a716-446655440000").unwrap();
     let task1 = Task {

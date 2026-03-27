@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::fmt;
 use uuid::Uuid;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
@@ -10,6 +11,18 @@ pub enum TaskStatus {
     Running,
     Succeeded,
     Failed,
+}
+
+impl fmt::Display for TaskStatus {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Pending => write!(f, "PENDING"),
+            Self::Throttled => write!(f, "THROTTLED"),
+            Self::Running => write!(f, "RUNNING"),
+            Self::Succeeded => write!(f, "SUCCEEDED"),
+            Self::Failed => write!(f, "FAILED"),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

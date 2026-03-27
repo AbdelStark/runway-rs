@@ -17,7 +17,7 @@ pub struct DocumentList {
     pub documents: Vec<Document>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateDocumentRequest {
     pub name: String,
@@ -47,7 +47,7 @@ impl CreateDocumentRequest {
     }
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct UpdateDocumentRequest {
     #[serde(skip_serializing_if = "Option::is_none")]
