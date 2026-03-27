@@ -909,6 +909,64 @@ async fn test_patch_api_error() {
     }
 }
 
+// ── DELETE/PATCH retry tests ─────────────────────────────────────────────
+
+#[tokio::test]
+async fn test_delete_rate_limit_retry() {
+    let mock_server = MockServer::start().await;
+
+    // First request returns 429, second returns 204
+    Mock::given(method("DELETE"))
+        .and(path("/v1/avatars/av-1"))
+        .respond_with(ResponseTemplate::new(429).append_header("retry-after", "1"))
+        .expect(1)
+        .up_to_n_times(1)
+        .mount(&mock_server)
+        .await;
+
+    Mock::given(method("DELETE"))
+        .and(path("/v1/avatars/av-1"))
+        .respond_with(ResponseTemplate::new(204))
+        .expect(1)
+        .mount(&mock_server)
+        .await;
+
+    let client = RunwayClient::with_config(test_config(&mock_server.uri())).unwrap();
+    client.avatars().delete("av-1").await.unwrap();
+}
+
+#[tokio::test]
+async fn test_patch_rate_limit_retry() {
+    let mock_server = MockServer::start().await;
+
+    // First request returns 429, second returns 200
+    Mock::given(method("PATCH"))
+        .and(path("/v1/avatars/av-1"))
+        .respond_with(ResponseTemplate::new(429).append_header("retry-after", "1"))
+        .expect(1)
+        .up_to_n_times(1)
+        .mount(&mock_server)
+        .await;
+
+    Mock::given(method("PATCH"))
+        .and(path("/v1/avatars/av-1"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "id": "av-1",
+            "name": "Updated"
+        })))
+        .expect(1)
+        .mount(&mock_server)
+        .await;
+
+    let client = RunwayClient::with_config(test_config(&mock_server.uri())).unwrap();
+    let avatar = client
+        .avatars()
+        .update("av-1", UpdateAvatarRequest::new().name("Updated"))
+        .await
+        .unwrap();
+    assert_eq!(avatar.name, "Updated");
+}
+
 // ── Rate limit exhaustion test ───────────────────────────────────────────
 
 #[tokio::test]

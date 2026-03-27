@@ -68,7 +68,7 @@ examples/               # Usage examples (require RUNWAYML_API_SECRET) [agent: c
 | Task             | Command                              | Notes                           |
 |------------------|--------------------------------------|---------------------------------|
 | Build            | `cargo build`                        | ~5s clean, <1s incremental      |
-| Test (all)       | `cargo test`                         | 82 tests, ~8s                   |
+| Test (all)       | `cargo test`                         | Unit + integration + doctests   |
 | Test (specific)  | `cargo test test_name`               | Filter by test name             |
 | Check            | `cargo check`                        | Type check without codegen      |
 | Clippy           | `cargo clippy -- -D warnings`        | Lint — treat warnings as errors |

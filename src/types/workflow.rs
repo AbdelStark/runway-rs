@@ -18,7 +18,7 @@ pub struct WorkflowList {
     pub workflows: Vec<Workflow>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RunWorkflowRequest {
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -40,12 +40,6 @@ impl RunWorkflowRequest {
             .get_or_insert_with(HashMap::new)
             .insert(key.into(), value);
         self
-    }
-}
-
-impl Default for RunWorkflowRequest {
-    fn default() -> Self {
-        Self::new()
     }
 }
 

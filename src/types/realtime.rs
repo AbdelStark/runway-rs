@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateRealtimeSessionRequest {
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -25,12 +25,6 @@ impl CreateRealtimeSessionRequest {
     pub fn params(mut self, params: serde_json::Value) -> Self {
         self.params = Some(params);
         self
-    }
-}
-
-impl Default for CreateRealtimeSessionRequest {
-    fn default() -> Self {
-        Self::new()
     }
 }
 

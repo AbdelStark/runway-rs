@@ -9,7 +9,7 @@ pub struct Organization {
     pub created_at: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UsageQueryRequest {
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -34,12 +34,6 @@ impl UsageQueryRequest {
     pub fn end_date(mut self, date: impl Into<String>) -> Self {
         self.end_date = Some(date.into());
         self
-    }
-}
-
-impl Default for UsageQueryRequest {
-    fn default() -> Self {
-        Self::new()
     }
 }
 
