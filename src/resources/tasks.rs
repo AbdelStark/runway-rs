@@ -1,3 +1,5 @@
+use async_stream::try_stream;
+use futures_core::Stream;
 use uuid::Uuid;
 
 use crate::client::RunwayClient;
@@ -8,29 +10,84 @@ pub struct TasksResource {
     pub(crate) client: RunwayClient,
 }
 
+/// Query parameters serialized for the GET /v1/tasks endpoint.
+///
+/// Uses a separate struct so that `Option<TaskStatus>` serializes to
+/// the correct SCREAMING_SNAKE_CASE string via serde, and `None` fields
+/// are omitted entirely from the query string.
+#[derive(serde::Serialize)]
+struct TaskListParams {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    status: Option<crate::types::task::TaskStatus>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    limit: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    offset: Option<u32>,
+}
+
+impl From<&TaskListQuery> for TaskListParams {
+    fn from(q: &TaskListQuery) -> Self {
+        Self {
+            status: q.status.clone(),
+            limit: q.limit,
+            offset: q.offset,
+        }
+    }
+}
+
 impl TasksResource {
     /// List tasks, optionally filtered by status with pagination.
     pub async fn list(&self, query: TaskListQuery) -> Result<TaskList, RunwayError> {
-        let mut params = Vec::new();
-        if let Some(ref status) = query.status {
-            let status_str = serde_json::to_value(status)
-                .ok()
-                .and_then(|v| v.as_str().map(|s| s.to_string()))
-                .unwrap_or_default();
-            params.push(format!("status={}", status_str));
+        let params = TaskListParams::from(&query);
+        self.client.get_with_query("/v1/tasks", &params).await
+    }
+
+    /// Stream pages of tasks, automatically fetching subsequent pages
+    /// while `has_more` is `true`.
+    ///
+    /// Each item yielded is a full [`TaskList`] page. The caller can
+    /// flatten pages into individual tasks as needed.
+    ///
+    /// ```no_run
+    /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
+    /// use futures_core::Stream;
+    /// use runway_sdk::{RunwayClient, TaskListQuery};
+    ///
+    /// let client = RunwayClient::new()?;
+    /// let stream = client.tasks().list_stream(TaskListQuery::new().limit(10));
+    /// // Use with futures::StreamExt::next() or similar stream combinators.
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub fn list_stream(
+        self,
+        query: TaskListQuery,
+    ) -> impl Stream<Item = Result<TaskList, RunwayError>> {
+        let client = self.client;
+        let page_size = query.limit.unwrap_or(100);
+        let status_filter = query.status.clone();
+        let initial_offset = query.offset.unwrap_or(0);
+
+        try_stream! {
+            let mut offset = initial_offset;
+            loop {
+                let params = TaskListParams {
+                    status: status_filter.clone(),
+                    limit: Some(page_size),
+                    offset: Some(offset),
+                };
+
+                let page: TaskList = client.get_with_query("/v1/tasks", &params).await?;
+                let has_more = page.has_more.unwrap_or(false);
+                let count = page.tasks.len() as u32;
+                yield page;
+
+                if !has_more || count == 0 {
+                    break;
+                }
+                offset += count;
+            }
         }
-        if let Some(limit) = query.limit {
-            params.push(format!("limit={}", limit));
-        }
-        if let Some(offset) = query.offset {
-            params.push(format!("offset={}", offset));
-        }
-        let path = if params.is_empty() {
-            "/v1/tasks".to_string()
-        } else {
-            format!("/v1/tasks?{}", params.join("&"))
-        };
-        self.client.get(&path).await
     }
 
     pub async fn get(&self, id: Uuid) -> Result<Task, RunwayError> {

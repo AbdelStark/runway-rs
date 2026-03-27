@@ -1727,3 +1727,329 @@ async fn test_image_to_video_with_webhook() {
         "550e8400-e29b-41d4-a716-446655440006"
     );
 }
+
+// ── Pagination stream tests ─────────────────────────────────────────────
+
+#[tokio::test]
+async fn test_tasks_list_stream_multi_page() {
+    let mock_server = MockServer::start().await;
+
+    // Page 1: has more
+    Mock::given(method("GET"))
+        .and(wiremock::matchers::query_param("limit", "2"))
+        .and(wiremock::matchers::query_param("offset", "0"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "tasks": [
+                {
+                    "id": "110e8400-e29b-41d4-a716-446655440001",
+                    "status": "SUCCEEDED",
+                    "createdAt": "2024-03-01T00:00:00Z"
+                },
+                {
+                    "id": "110e8400-e29b-41d4-a716-446655440002",
+                    "status": "SUCCEEDED",
+                    "createdAt": "2024-03-01T00:01:00Z"
+                }
+            ],
+            "hasMore": true
+        })))
+        .expect(1)
+        .mount(&mock_server)
+        .await;
+
+    // Page 2: last page
+    Mock::given(method("GET"))
+        .and(wiremock::matchers::query_param("limit", "2"))
+        .and(wiremock::matchers::query_param("offset", "2"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "tasks": [
+                {
+                    "id": "110e8400-e29b-41d4-a716-446655440003",
+                    "status": "RUNNING",
+                    "createdAt": "2024-03-01T00:02:00Z",
+                    "progress": 0.5
+                }
+            ],
+            "hasMore": false
+        })))
+        .expect(1)
+        .mount(&mock_server)
+        .await;
+
+    let client = RunwayClient::with_config(test_config(&mock_server.uri())).unwrap();
+    let stream = client.tasks().list_stream(TaskListQuery::new().limit(2));
+    let pages: Vec<TaskList> = stream
+        .collect::<Vec<_>>()
+        .await
+        .into_iter()
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
+
+    assert_eq!(pages.len(), 2);
+    assert_eq!(pages[0].tasks.len(), 2);
+    assert_eq!(pages[0].has_more, Some(true));
+    assert_eq!(pages[1].tasks.len(), 1);
+    assert_eq!(pages[1].has_more, Some(false));
+
+    // Verify all task IDs
+    let all_ids: Vec<String> = pages
+        .iter()
+        .flat_map(|p| p.tasks.iter().map(|t| t.id.to_string()))
+        .collect();
+    assert_eq!(all_ids.len(), 3);
+    assert!(all_ids[0].ends_with("0001"));
+    assert!(all_ids[1].ends_with("0002"));
+    assert!(all_ids[2].ends_with("0003"));
+}
+
+#[tokio::test]
+async fn test_tasks_list_stream_single_page() {
+    let mock_server = MockServer::start().await;
+
+    Mock::given(method("GET"))
+        .and(wiremock::matchers::query_param("limit", "10"))
+        .and(wiremock::matchers::query_param("offset", "0"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "tasks": [
+                {
+                    "id": "220e8400-e29b-41d4-a716-446655440001",
+                    "status": "PENDING",
+                    "createdAt": "2024-03-01T00:00:00Z"
+                }
+            ],
+            "hasMore": false
+        })))
+        .expect(1)
+        .mount(&mock_server)
+        .await;
+
+    let client = RunwayClient::with_config(test_config(&mock_server.uri())).unwrap();
+    let stream = client.tasks().list_stream(TaskListQuery::new().limit(10));
+    let pages: Vec<TaskList> = stream
+        .collect::<Vec<_>>()
+        .await
+        .into_iter()
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
+
+    assert_eq!(pages.len(), 1);
+    assert_eq!(pages[0].tasks.len(), 1);
+}
+
+#[tokio::test]
+async fn test_tasks_list_stream_empty() {
+    let mock_server = MockServer::start().await;
+
+    Mock::given(method("GET"))
+        .and(wiremock::matchers::query_param("limit", "10"))
+        .and(wiremock::matchers::query_param("offset", "0"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "tasks": [],
+            "hasMore": false
+        })))
+        .expect(1)
+        .mount(&mock_server)
+        .await;
+
+    let client = RunwayClient::with_config(test_config(&mock_server.uri())).unwrap();
+    let stream = client.tasks().list_stream(TaskListQuery::new().limit(10));
+    let pages: Vec<TaskList> = stream
+        .collect::<Vec<_>>()
+        .await
+        .into_iter()
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
+
+    assert_eq!(pages.len(), 1);
+    assert_eq!(pages[0].tasks.len(), 0);
+}
+
+#[tokio::test]
+async fn test_tasks_list_stream_with_status_filter() {
+    let mock_server = MockServer::start().await;
+
+    Mock::given(method("GET"))
+        .and(wiremock::matchers::query_param("status", "FAILED"))
+        .and(wiremock::matchers::query_param("limit", "5"))
+        .and(wiremock::matchers::query_param("offset", "0"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "tasks": [
+                {
+                    "id": "330e8400-e29b-41d4-a716-446655440001",
+                    "status": "FAILED",
+                    "createdAt": "2024-03-01T00:00:00Z",
+                    "failure": "Content policy violation",
+                    "failureCode": "MODERATION"
+                }
+            ],
+            "hasMore": false
+        })))
+        .expect(1)
+        .mount(&mock_server)
+        .await;
+
+    let client = RunwayClient::with_config(test_config(&mock_server.uri())).unwrap();
+    let stream = client
+        .tasks()
+        .list_stream(TaskListQuery::new().status(TaskStatus::Failed).limit(5));
+    let pages: Vec<TaskList> = stream
+        .collect::<Vec<_>>()
+        .await
+        .into_iter()
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
+
+    assert_eq!(pages.len(), 1);
+    assert_eq!(pages[0].tasks[0].status, TaskStatus::Failed);
+    assert_eq!(
+        pages[0].tasks[0].failure.as_deref(),
+        Some("Content policy violation")
+    );
+}
+
+// ── JSON error parsing tests ────────────────────────────────────────────
+
+#[tokio::test]
+async fn test_json_error_response_parsing() {
+    let mock_server = MockServer::start().await;
+
+    Mock::given(method("GET"))
+        .and(path("/v1/tasks/550e8400-e29b-41d4-a716-446655440099"))
+        .respond_with(ResponseTemplate::new(422).set_body_json(serde_json::json!({
+            "error": {
+                "code": "INVALID_PARAMETER",
+                "message": "The task ID is not valid"
+            }
+        })))
+        .expect(1)
+        .mount(&mock_server)
+        .await;
+
+    let client = RunwayClient::with_config(test_config(&mock_server.uri())).unwrap();
+
+    let err = client
+        .tasks()
+        .get(uuid::Uuid::parse_str("550e8400-e29b-41d4-a716-446655440099").unwrap())
+        .await
+        .unwrap_err();
+
+    match err {
+        RunwayError::Api {
+            status,
+            message,
+            code,
+        } => {
+            assert_eq!(status, 422);
+            assert_eq!(message, "The task ID is not valid");
+            assert_eq!(code.as_deref(), Some("INVALID_PARAMETER"));
+        }
+        other => panic!("Expected Api error, got: {:?}", other),
+    }
+}
+
+#[tokio::test]
+async fn test_json_error_without_error_wrapper() {
+    let mock_server = MockServer::start().await;
+
+    Mock::given(method("GET"))
+        .and(path("/v1/tasks/550e8400-e29b-41d4-a716-446655440098"))
+        .respond_with(ResponseTemplate::new(400).set_body_json(serde_json::json!({
+            "code": "BAD_REQUEST",
+            "message": "Missing required field"
+        })))
+        .expect(1)
+        .mount(&mock_server)
+        .await;
+
+    let client = RunwayClient::with_config(test_config(&mock_server.uri())).unwrap();
+
+    let err = client
+        .tasks()
+        .get(uuid::Uuid::parse_str("550e8400-e29b-41d4-a716-446655440098").unwrap())
+        .await
+        .unwrap_err();
+
+    match err {
+        RunwayError::Api {
+            status,
+            message,
+            code,
+        } => {
+            assert_eq!(status, 400);
+            assert_eq!(message, "Missing required field");
+            assert_eq!(code.as_deref(), Some("BAD_REQUEST"));
+        }
+        other => panic!("Expected Api error, got: {:?}", other),
+    }
+}
+
+#[tokio::test]
+async fn test_plain_text_error_response() {
+    let mock_server = MockServer::start().await;
+
+    Mock::given(method("GET"))
+        .and(path("/v1/tasks/550e8400-e29b-41d4-a716-446655440097"))
+        .respond_with(ResponseTemplate::new(500).set_body_string("Internal Server Error"))
+        .expect(1)
+        .mount(&mock_server)
+        .await;
+
+    let client = RunwayClient::with_config(
+        Config::new("test-api-key-12345")
+            .base_url(&mock_server.uri())
+            .max_retries(0),
+    )
+    .unwrap();
+
+    let err = client
+        .tasks()
+        .get(uuid::Uuid::parse_str("550e8400-e29b-41d4-a716-446655440097").unwrap())
+        .await
+        .unwrap_err();
+
+    match err {
+        RunwayError::Api {
+            status,
+            message,
+            code,
+        } => {
+            assert_eq!(status, 500);
+            assert_eq!(message, "Internal Server Error");
+            assert!(code.is_none());
+        }
+        other => panic!("Expected Api error, got: {:?}", other),
+    }
+}
+
+// ── Voice preview test ──────────────────────────────────────────────────
+
+#[tokio::test]
+async fn test_voice_preview() {
+    let mock_server = MockServer::start().await;
+
+    Mock::given(method("POST"))
+        .and(path("/v1/voices/preview"))
+        .and(body_json(serde_json::json!({
+            "text": "Hello, world!",
+            "voiceId": "voice-123"
+        })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "audioUrl": "https://cdn.runway.com/preview/abc123.mp3"
+        })))
+        .expect(1)
+        .mount(&mock_server)
+        .await;
+
+    let client = RunwayClient::with_config(test_config(&mock_server.uri())).unwrap();
+
+    let resp = client
+        .voices()
+        .preview(PreviewVoiceRequest::new("Hello, world!").voice_id("voice-123"))
+        .await
+        .unwrap();
+
+    assert_eq!(
+        resp.audio_url.as_deref(),
+        Some("https://cdn.runway.com/preview/abc123.mp3")
+    );
+}
