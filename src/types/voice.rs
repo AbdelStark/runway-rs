@@ -17,7 +17,7 @@ pub struct VoiceList {
     pub voices: Vec<Voice>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateVoiceRequest {
     pub name: String,
@@ -47,7 +47,7 @@ impl CreateVoiceRequest {
     }
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PreviewVoiceRequest {
     pub text: String,

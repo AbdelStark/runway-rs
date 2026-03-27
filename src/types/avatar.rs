@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateAvatarRequest {
     pub name: String,
@@ -30,7 +30,7 @@ impl CreateAvatarRequest {
     }
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UpdateAvatarRequest {
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -55,12 +55,6 @@ impl UpdateAvatarRequest {
     pub fn description(mut self, desc: impl Into<String>) -> Self {
         self.description = Some(desc.into());
         self
-    }
-}
-
-impl Default for UpdateAvatarRequest {
-    fn default() -> Self {
-        Self::new()
     }
 }
 

@@ -6,7 +6,7 @@ use super::models::{ImageModel, VideoModel, VideoRatio};
 
 // ── Image to Video ──────────────────────────────────────────────────────────
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ImageToVideoRequest {
     pub model: VideoModel,
@@ -58,7 +58,7 @@ impl ImageToVideoRequest {
 
 // ── Text to Video ───────────────────────────────────────────────────────────
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TextToVideoRequest {
     pub model: VideoModel,
@@ -108,7 +108,7 @@ impl TextToVideoRequest {
 
 // ── Video to Video ──────────────────────────────────────────────────────────
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct VideoToVideoRequest {
     pub model: VideoModel,
@@ -160,7 +160,7 @@ impl VideoToVideoRequest {
 
 // ── Text to Image ───────────────────────────────────────────────────────────
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TextToImageRequest {
     pub model: ImageModel,
@@ -197,7 +197,7 @@ impl TextToImageRequest {
 
 // ── Character Performance ───────────────────────────────────────────────────
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CharacterPerformanceRequest {
     pub model: VideoModel,
@@ -248,7 +248,7 @@ impl CharacterPerformanceRequest {
 
 // ── Sound Effect ────────────────────────────────────────────────────────────
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SoundEffectRequest {
     pub prompt_text: String,
@@ -280,7 +280,7 @@ impl SoundEffectRequest {
 
 // ── Speech to Speech ────────────────────────────────────────────────────────
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SpeechToSpeechRequest {
     pub audio: MediaInput,
@@ -312,7 +312,7 @@ impl SpeechToSpeechRequest {
 
 // ── Text to Speech ──────────────────────────────────────────────────────────
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TextToSpeechRequest {
     pub prompt_text: String,
@@ -344,7 +344,7 @@ impl TextToSpeechRequest {
 
 // ── Voice Dubbing ───────────────────────────────────────────────────────────
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct VoiceDubbingRequest {
     pub audio: MediaInput,
@@ -376,7 +376,7 @@ impl VoiceDubbingRequest {
 
 // ── Voice Isolation ─────────────────────────────────────────────────────────
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct VoiceIsolationRequest {
     pub audio: MediaInput,
@@ -397,7 +397,7 @@ impl VoiceIsolationRequest {
 
 // ── Upload ──────────────────────────────────────────────────────────────────
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateUploadRequest {
     pub filename: String,

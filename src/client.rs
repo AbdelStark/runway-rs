@@ -298,8 +298,8 @@ impl RunwayClient {
         let url = self.url(path);
         tracing::debug!("DELETE {}", url);
 
-        let resp = self.inner.http.delete(&url).send().await?;
-        self.check_response(resp).await?;
+        self.send_with_retry(|| self.inner.http.delete(&url))
+            .await?;
         Ok(())
     }
 
@@ -310,9 +310,17 @@ impl RunwayClient {
     ) -> Result<Resp, RunwayError> {
         let url = self.url(path);
         tracing::debug!("PATCH {}", url);
+        let body_bytes = serde_json::to_vec(body)?;
 
-        let resp = self.inner.http.patch(&url).json(body).send().await?;
-        let resp = self.check_response(resp).await?;
+        let resp = self
+            .send_with_retry(|| {
+                self.inner
+                    .http
+                    .patch(&url)
+                    .header(CONTENT_TYPE, "application/json")
+                    .body(body_bytes.clone())
+            })
+            .await?;
         Ok(resp.json::<Resp>().await?)
     }
 }
