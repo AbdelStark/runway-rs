@@ -28,7 +28,7 @@ impl CreateRealtimeSessionRequest {
     }
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RealtimeSession {
     pub id: String,

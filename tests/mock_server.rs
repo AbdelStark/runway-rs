@@ -1,7 +1,7 @@
 use futures::StreamExt;
 use runway_sdk::*;
 use std::time::Duration;
-use wiremock::matchers::{header, method, path};
+use wiremock::matchers::{body_json, header, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 fn test_config(base_url: &str) -> Config {
@@ -1511,4 +1511,219 @@ async fn test_polling_timeout() {
         .await;
 
     assert!(matches!(result, Err(RunwayError::Timeout { .. })));
+}
+
+// ── 5xx retry tests ─────────────────────────────────────────────────────
+
+#[tokio::test]
+async fn test_server_error_502_retry() {
+    let mock_server = MockServer::start().await;
+
+    // First request returns 502, second returns success
+    Mock::given(method("GET"))
+        .and(path("/v1/tasks/550e8400-e29b-41d4-a716-446655440000"))
+        .respond_with(ResponseTemplate::new(502).set_body_string("Bad Gateway"))
+        .up_to_n_times(1)
+        .expect(1)
+        .mount(&mock_server)
+        .await;
+
+    Mock::given(method("GET"))
+        .and(path("/v1/tasks/550e8400-e29b-41d4-a716-446655440000"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "id": "550e8400-e29b-41d4-a716-446655440000",
+            "status": "SUCCEEDED",
+            "createdAt": "2024-01-01T00:00:00Z",
+            "output": ["https://example.com/video.mp4"]
+        })))
+        .expect(1)
+        .mount(&mock_server)
+        .await;
+
+    let config = test_config(&mock_server.uri());
+    let client = RunwayClient::with_config(config).unwrap();
+
+    let task = client
+        .tasks()
+        .get("550e8400-e29b-41d4-a716-446655440000".parse().unwrap())
+        .await
+        .unwrap();
+    assert_eq!(task.status, TaskStatus::Succeeded);
+}
+
+#[tokio::test]
+async fn test_server_error_503_retry() {
+    let mock_server = MockServer::start().await;
+
+    Mock::given(method("POST"))
+        .and(path("/v1/text_to_video"))
+        .respond_with(ResponseTemplate::new(503).set_body_string("Service Unavailable"))
+        .up_to_n_times(1)
+        .expect(1)
+        .mount(&mock_server)
+        .await;
+
+    Mock::given(method("POST"))
+        .and(path("/v1/text_to_video"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "id": "550e8400-e29b-41d4-a716-446655440001"
+        })))
+        .expect(1)
+        .mount(&mock_server)
+        .await;
+
+    let config = test_config(&mock_server.uri());
+    let client = RunwayClient::with_config(config).unwrap();
+
+    let pending = client
+        .text_to_video()
+        .create(TextToVideoRequest::new(VideoModel::Gen45, "test"))
+        .await
+        .unwrap();
+    assert_eq!(
+        pending.id().to_string(),
+        "550e8400-e29b-41d4-a716-446655440001"
+    );
+}
+
+#[tokio::test]
+async fn test_server_error_504_exhausted() {
+    let mock_server = MockServer::start().await;
+
+    // Always return 504 — should exhaust retries
+    Mock::given(method("GET"))
+        .and(path("/v1/tasks/550e8400-e29b-41d4-a716-446655440002"))
+        .respond_with(ResponseTemplate::new(504).set_body_string("Gateway Timeout"))
+        .expect(4) // 1 initial + 3 retries
+        .mount(&mock_server)
+        .await;
+
+    let config = test_config(&mock_server.uri());
+    let client = RunwayClient::with_config(config).unwrap();
+
+    let result = client
+        .tasks()
+        .get("550e8400-e29b-41d4-a716-446655440002".parse().unwrap())
+        .await;
+
+    assert!(matches!(result, Err(RunwayError::Api { status: 504, .. })));
+}
+
+#[tokio::test]
+async fn test_server_error_500_not_retried() {
+    let mock_server = MockServer::start().await;
+
+    // 500 Internal Server Error should NOT be retried (only 502/503/504 are)
+    Mock::given(method("GET"))
+        .and(path("/v1/tasks/550e8400-e29b-41d4-a716-446655440003"))
+        .respond_with(ResponseTemplate::new(500).set_body_string("Internal Server Error"))
+        .expect(1)
+        .mount(&mock_server)
+        .await;
+
+    let config = test_config(&mock_server.uri());
+    let client = RunwayClient::with_config(config).unwrap();
+
+    let result = client
+        .tasks()
+        .get("550e8400-e29b-41d4-a716-446655440003".parse().unwrap())
+        .await;
+
+    assert!(matches!(result, Err(RunwayError::Api { status: 500, .. })));
+}
+
+// ── Task cancel test ────────────────────────────────────────────────────
+
+#[tokio::test]
+async fn test_task_cancel() {
+    let mock_server = MockServer::start().await;
+
+    Mock::given(method("POST"))
+        .and(path(
+            "/v1/tasks/550e8400-e29b-41d4-a716-446655440004/cancel",
+        ))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({})))
+        .expect(1)
+        .mount(&mock_server)
+        .await;
+
+    let config = test_config(&mock_server.uri());
+    let client = RunwayClient::with_config(config).unwrap();
+
+    client
+        .tasks()
+        .cancel("550e8400-e29b-41d4-a716-446655440004".parse().unwrap())
+        .await
+        .unwrap();
+}
+
+// ── Webhook URL integration test ────────────────────────────────────────
+
+#[tokio::test]
+async fn test_text_to_video_with_webhook() {
+    let mock_server = MockServer::start().await;
+
+    Mock::given(method("POST"))
+        .and(path("/v1/text_to_video"))
+        .and(body_json(serde_json::json!({
+            "model": "gen4.5",
+            "promptText": "A sunset over the ocean",
+            "webhookUrl": "https://example.com/webhook"
+        })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "id": "550e8400-e29b-41d4-a716-446655440005"
+        })))
+        .expect(1)
+        .mount(&mock_server)
+        .await;
+
+    let config = test_config(&mock_server.uri());
+    let client = RunwayClient::with_config(config).unwrap();
+
+    let pending = client
+        .text_to_video()
+        .create(
+            TextToVideoRequest::new(VideoModel::Gen45, "A sunset over the ocean")
+                .webhook_url("https://example.com/webhook"),
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        pending.id().to_string(),
+        "550e8400-e29b-41d4-a716-446655440005"
+    );
+}
+
+#[tokio::test]
+async fn test_image_to_video_with_webhook() {
+    let mock_server = MockServer::start().await;
+
+    Mock::given(method("POST"))
+        .and(path("/v1/image_to_video"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "id": "550e8400-e29b-41d4-a716-446655440006"
+        })))
+        .expect(1)
+        .mount(&mock_server)
+        .await;
+
+    let config = test_config(&mock_server.uri());
+    let client = RunwayClient::with_config(config).unwrap();
+
+    let pending = client
+        .image_to_video()
+        .create(
+            ImageToVideoRequest::new(
+                VideoModel::Gen45,
+                "A cat",
+                MediaInput::from_url("https://example.com/cat.png"),
+            )
+            .webhook_url("https://example.com/webhook"),
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        pending.id().to_string(),
+        "550e8400-e29b-41d4-a716-446655440006"
+    );
 }

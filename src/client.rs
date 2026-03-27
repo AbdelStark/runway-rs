@@ -243,7 +243,10 @@ impl RunwayClient {
         Ok(resp)
     }
 
-    /// Send a request with retry logic for rate limiting (HTTP 429).
+    /// Send a request with retry logic for rate limiting (HTTP 429) and
+    /// transient server errors (HTTP 502, 503, 504).
+    ///
+    /// Uses exponential backoff with jitter to avoid thundering-herd effects.
     async fn send_with_retry(
         &self,
         request_builder: impl Fn() -> reqwest::RequestBuilder,
@@ -251,8 +254,9 @@ impl RunwayClient {
         let mut retries = 0;
         loop {
             let resp = request_builder().send().await?;
+            let status = resp.status();
 
-            if resp.status() == reqwest::StatusCode::TOO_MANY_REQUESTS {
+            if status == reqwest::StatusCode::TOO_MANY_REQUESTS {
                 if retries >= self.inner.config.max_retries {
                     let retry_after = resp
                         .headers()
@@ -262,8 +266,31 @@ impl RunwayClient {
                         .map(Duration::from_secs);
                     return Err(RunwayError::RateLimited { retry_after });
                 }
-                let wait = Duration::from_secs(2u64.pow(retries));
+                let wait = Self::backoff_with_jitter(retries);
                 tracing::warn!("Rate limited, retrying in {:?}", wait);
+                tokio::time::sleep(wait).await;
+                retries += 1;
+                continue;
+            }
+
+            // Retry on transient server errors (502 Bad Gateway, 503 Service
+            // Unavailable, 504 Gateway Timeout).
+            if matches!(
+                status,
+                reqwest::StatusCode::BAD_GATEWAY
+                    | reqwest::StatusCode::SERVICE_UNAVAILABLE
+                    | reqwest::StatusCode::GATEWAY_TIMEOUT
+            ) {
+                if retries >= self.inner.config.max_retries {
+                    let text = resp.text().await.unwrap_or_default();
+                    return Err(RunwayError::Api {
+                        status: status.as_u16(),
+                        message: text,
+                        code: None,
+                    });
+                }
+                let wait = Self::backoff_with_jitter(retries);
+                tracing::warn!("Server error {}, retrying in {:?}", status.as_u16(), wait);
                 tokio::time::sleep(wait).await;
                 retries += 1;
                 continue;
@@ -271,6 +298,19 @@ impl RunwayClient {
 
             return self.check_response(resp).await;
         }
+    }
+
+    /// Calculate exponential backoff with jitter: base * 2^retries + random jitter.
+    fn backoff_with_jitter(retries: u32) -> Duration {
+        let base_ms = 1000u64 * 2u64.pow(retries);
+        // Simple jitter: add 0-500ms using a time-based seed to avoid
+        // requiring a random number generator dependency.
+        let jitter_ms = (std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .subsec_nanos() as u64)
+            % 500;
+        Duration::from_millis(base_ms + jitter_ms)
     }
 
     pub(crate) async fn post<Req: Serialize, Resp: DeserializeOwned>(
