@@ -7,8 +7,6 @@ Async Rust SDK for the Runway API with typed generation requests, uploads, task 
 [![CI](https://github.com/AbdelStark/runway-rs/actions/workflows/ci.yml/badge.svg)](https://github.com/AbdelStark/runway-rs/actions/workflows/ci.yml)
 [![License](https://img.shields.io/crates/l/runway-sdk)](./LICENSE-MIT)
 
-![runway-sdk preview](./docs/terminal-preview.svg)
-
 ## How It Works
 
 ```text
@@ -58,7 +56,6 @@ export RUNWAYML_API_SECRET=your_secret_here
 3. Run a safe organization smoke test.
 
 ```bash
-cat > src/main.rs <<'RS'
 use runway_sdk::RunwayClient;
 
 #[tokio::main]
@@ -69,9 +66,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Credit balance: {}", org.credit_balance);
     Ok(())
 }
-RS
-
-cargo run
 ```
 
 ```text
