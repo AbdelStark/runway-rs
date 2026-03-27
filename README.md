@@ -8,23 +8,6 @@
   <img src="https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue" alt="License" />
 </p>
 
-## How It Works
-
-```mermaid
-flowchart LR
-    App["Your Rust code"] --> Client["RunwayClient"]
-    Client --> Resources["Typed resources<br/>text_to_video · uploads · workflows · organization"]
-    Resources --> Runtime["Config + RequestOptions<br/>timeout · retries · idempotency · headers/query override"]
-    Runtime --> API["Runway API"]
-    API --> Handles["PendingTask / PendingWorkflowInvocation"]
-    Handles --> Poll["wait_for_output() / stream_status()"]
-    Poll --> Output["Typed result<br/>output_urls() · workflow output · response metadata"]
-    Resources -. create_ephemeral() .-> Upload["runway:// URI"]
-    Upload --> API
-```
-
-Read-only endpoints such as `organization()` and `workflows().list()` are safe smoke tests. Billable generations and ephemeral uploads depend on the account permissions and credits attached to your Runway key.
-
 ## Quick Start
 
 1. Clone and build.
@@ -62,10 +45,10 @@ Usage rows: <count>
 ```rust
 use runway_sdk::{RunwayClient, TextToVideoGen45Request, VideoRatio};
 
-# async fn run() -> Result<(), Box<dyn std::error::Error>> {
-let client = RunwayClient::new()?;
+async fn run() -> Result<(), Box<dyn std::error::Error>> {
+    let client = RunwayClient::new()?;
 
-let task = client
+    let task = client
     .text_to_video()
     .create(TextToVideoGen45Request::new(
         "Aerial shot of a glacier at sunrise",
@@ -76,9 +59,9 @@ let task = client
     .wait_for_output()
     .await?;
 
-println!("{}", task.output_urls().unwrap()[0]);
-# Ok(())
-# }
+    println!("{}", task.output_urls().unwrap()[0]);
+    Ok(())
+}
 ```
 
 - `TextToVideoGen45Request` keeps the request model-specific instead of flattening everything into one permissive struct.
