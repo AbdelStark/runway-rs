@@ -221,6 +221,10 @@ impl RunwayClient {
     }
 
     /// Check a response for errors. Returns the response if successful.
+    ///
+    /// Attempts to parse the error body as JSON to extract structured error
+    /// information (`code` and `message` fields). Falls back to the raw text
+    /// if the body is not valid JSON.
     async fn check_response(
         &self,
         resp: reqwest::Response,
@@ -233,10 +237,29 @@ impl RunwayClient {
 
         if !status.is_success() {
             let text = resp.text().await.unwrap_or_default();
+
+            // Try to parse as JSON to extract structured error fields.
+            let (message, code) = if let Ok(json) = serde_json::from_str::<serde_json::Value>(&text)
+            {
+                let error_obj = json.get("error").unwrap_or(&json);
+                let msg = error_obj
+                    .get("message")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string())
+                    .unwrap_or_else(|| text.clone());
+                let code = error_obj
+                    .get("code")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string());
+                (msg, code)
+            } else {
+                (text, None)
+            };
+
             return Err(RunwayError::Api {
                 status: status.as_u16(),
-                message: text,
-                code: None,
+                message,
+                code,
             });
         }
 
@@ -343,6 +366,20 @@ impl RunwayClient {
         tracing::debug!("GET {}", url);
 
         let resp = self.send_with_retry(|| self.inner.http.get(&url)).await?;
+        Ok(resp.json::<Resp>().await?)
+    }
+
+    pub(crate) async fn get_with_query<Query: Serialize, Resp: DeserializeOwned>(
+        &self,
+        path: &str,
+        query: &Query,
+    ) -> Result<Resp, RunwayError> {
+        let url = self.url(path);
+        tracing::debug!("GET {} (with query params)", url);
+
+        let resp = self
+            .send_with_retry(|| self.inner.http.get(&url).query(query))
+            .await?;
         Ok(resp.json::<Resp>().await?)
     }
 

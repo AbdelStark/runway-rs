@@ -6,6 +6,7 @@ use uuid::Uuid;
 /// Errors are categorized by source: API responses, task lifecycle,
 /// network/serialization, and local validation.
 #[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
 pub enum RunwayError {
     #[error("API error ({status}): {message}")]
     Api {
