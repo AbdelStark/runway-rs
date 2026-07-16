@@ -16,6 +16,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Task ID: {}", pending.id());
 
     let task = pending.wait_for_output().await?;
-    println!("Output URL: {}", task.output_urls().unwrap()[0]);
+    if let Some(url) = task.output_urls().and_then(|urls| urls.first()) {
+        println!("Output URL: {url}");
+    }
     Ok(())
 }

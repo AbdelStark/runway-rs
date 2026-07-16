@@ -1,0 +1,191 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version from Cargo.toml, without the leading v
+        required: true
+        type: string
+      tag:
+        description: Existing Git tag to release (must equal v<version>)
+        required: true
+        type: string
+      mode:
+        description: Verify only, or publish after all checks pass
+        required: true
+        default: verify-only
+        type: choice
+        options:
+          - verify-only
+          - publish
+      confirmation:
+        description: For publishing, enter "publish runway-sdk <version>"
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ inputs.tag }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: -Dwarnings
+
+jobs:
+  verify:
+    name: Verify ${{ inputs.tag }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    outputs:
+      verified_sha: ${{ steps.validate.outputs.verified_sha }}
+    env:
+      RELEASE_VERSION: ${{ inputs.version }}
+      RELEASE_TAG: ${{ inputs.tag }}
+      RELEASE_MODE: ${{ inputs.mode }}
+      RELEASE_CONFIRMATION: ${{ inputs.confirmation }}
+    steps:
+      - name: Check out the requested tag
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ inputs.tag }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Install stable Rust
+        uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
+        with:
+          components: clippy,rustfmt
+      - name: Restore Rust cache
+        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        with:
+          key: release
+      - name: Validate explicit release inputs
+        id: validate
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ ! "$RELEASE_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+([+-][0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::Invalid semantic version: $RELEASE_VERSION"
+            exit 1
+          fi
+          if [[ "$RELEASE_TAG" != "v$RELEASE_VERSION" ]]; then
+            echo "::error::Tag must be v$RELEASE_VERSION"
+            exit 1
+          fi
+          git show-ref --verify --quiet "refs/tags/$RELEASE_TAG"
+          if [[ "$(git rev-list -n 1 "$RELEASE_TAG")" != "$(git rev-parse HEAD)" ]]; then
+            echo "::error::The checked-out commit does not match $RELEASE_TAG"
+            exit 1
+          fi
+          manifest_version="$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[] | select(.name == "runway-sdk") | .version')"
+          if [[ "$manifest_version" != "$RELEASE_VERSION" ]]; then
+            echo "::error::Cargo.toml version $manifest_version does not match $RELEASE_VERSION"
+            exit 1
+          fi
+          if ! grep -Fq "## [$RELEASE_VERSION]" CHANGELOG.md; then
+            echo "::error::CHANGELOG.md has no section for $RELEASE_VERSION"
+            exit 1
+          fi
+          if [[ "$RELEASE_MODE" == "publish" && "$RELEASE_CONFIRMATION" != "publish runway-sdk $RELEASE_VERSION" ]]; then
+            echo "::error::Publishing confirmation does not match the requested version"
+            exit 1
+          fi
+          echo "verified_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+      - name: Check formatting
+        run: cargo fmt --all --check
+      - name: Run tests
+        run: cargo test --locked --all-targets --all-features
+      - name: Test documentation examples
+        run: cargo test --locked --doc --all-features
+      - name: Run Clippy
+        run: cargo clippy --locked --all-targets --all-features -- -D warnings
+      - name: Install cargo-audit
+        uses: taiki-e/install-action@ed67fa35ac944f3a9b33f12c4dd43b6f31a47e20 # v2.83.3
+        with:
+          tool: cargo-audit@0.22.2
+      - name: Install cargo-deny
+        uses: taiki-e/install-action@ed67fa35ac944f3a9b33f12c4dd43b6f31a47e20 # v2.83.3
+        with:
+          tool: cargo-deny@0.20.2
+      - name: Audit dependencies
+        run: cargo audit --deny warnings
+      - name: Check dependency policy
+        run: cargo deny check
+      - name: Check semantic-versioning compatibility
+        uses: obi1kenobi/cargo-semver-checks-action@6b69fcf40e9b5fb17adeb57e4b6ecd020649a239 # v2.9
+        with:
+          package: runway-sdk
+          rust-toolchain: manual
+      - name: Verify package
+        run: cargo package --locked
+      - name: Install nightly Rust for docs.rs validation
+        uses: dtolnay/rust-toolchain@efcb852328a9f50117170cc43094fb6f09eaf1ae # nightly
+      - name: Build documentation like docs.rs
+        env:
+          DOCS_RS: "1"
+          RUSTDOCFLAGS: --cfg docsrs -Dwarnings
+        run: cargo +nightly doc --locked --all-features --no-deps
+
+  publish:
+    name: Publish runway-sdk ${{ inputs.version }}
+    if: ${{ inputs.mode == 'publish' }}
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: crates-io
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      RELEASE_TAG: ${{ inputs.tag }}
+    steps:
+      - name: Check out the verified commit
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ needs.verify.outputs.verified_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Install stable Rust
+        uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
+      - name: Confirm the tag still identifies the verified commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$(git rev-list -n 1 "$RELEASE_TAG")" != "$(git rev-parse HEAD)" ]]; then
+            echo "::error::$RELEASE_TAG moved after verification"
+            exit 1
+          fi
+      - name: Authenticate to crates.io with a short-lived token
+        id: crates_io
+        uses: rust-lang/crates-io-auth-action@c6f97d42243bad5fab37ca0427f495c86d5b1a18 # v1.0.5
+      - name: Publish crate
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ steps.crates_io.outputs.token }}
+        run: cargo publish --locked
+
+  github-release:
+    name: Create GitHub release
+    if: ${{ inputs.mode == 'publish' }}
+    needs: [verify, publish]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ inputs.tag }}
+          VERIFIED_SHA: ${{ needs.verify.outputs.verified_sha }}
+        run: |
+          set -euo pipefail
+          tag_sha="$(gh api "repos/$GH_REPO/commits/$RELEASE_TAG" --jq .sha)"
+          if [[ "$tag_sha" != "$VERIFIED_SHA" ]]; then
+            echo "::error::$RELEASE_TAG moved after publication; refusing to create a mismatched release"
+            exit 1
+          fi
+          gh release create "$RELEASE_TAG" --verify-tag --generate-notes --title "$RELEASE_TAG"

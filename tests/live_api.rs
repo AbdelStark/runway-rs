@@ -35,6 +35,7 @@ fn temp_png_path() -> PathBuf {
 }
 
 #[tokio::test]
+#[ignore = "requires RUNWAYML_API_SECRET and contacts the live Runway API"]
 async fn live_organization_round_trip_and_metadata() -> Result<(), Box<dyn std::error::Error>> {
     let client = live_client()?;
 
@@ -58,6 +59,7 @@ async fn live_organization_round_trip_and_metadata() -> Result<(), Box<dyn std::
 }
 
 #[tokio::test]
+#[ignore = "requires RUNWAYML_API_SECRET and contacts the live Runway API"]
 async fn live_usage_endpoint_returns_data_or_empty_report() -> Result<(), Box<dyn std::error::Error>>
 {
     let client = live_client()?;
@@ -73,15 +75,15 @@ async fn live_usage_endpoint_returns_data_or_empty_report() -> Result<(), Box<dy
         .await?;
 
     assert_eq!(response.response.status, 200);
-    assert!(
-        !response.data.models.is_empty() || !response.data.results.is_empty(),
-        "usage endpoint returned no models and no results"
-    );
+    if response.data.models.is_empty() && response.data.results.is_empty() {
+        println!("usage endpoint returned a valid empty report for this period");
+    }
 
     Ok(())
 }
 
 #[tokio::test]
+#[ignore = "requires RUNWAYML_API_SECRET and contacts the live Runway API"]
 async fn live_management_lists_and_optional_retrieve() -> Result<(), Box<dyn std::error::Error>> {
     let client = live_client()?;
 
@@ -96,7 +98,7 @@ async fn live_management_lists_and_optional_retrieve() -> Result<(), Box<dyn std
 
     let documents = client
         .documents()
-        .list(DocumentListQuery::new().limit(1))
+        .list(DocumentListQuery::newest_first().limit(1))
         .await?;
     if let Some(document) = documents.items().first() {
         let retrieved = client.documents().retrieve(&document.id).await?;
@@ -113,6 +115,7 @@ async fn live_management_lists_and_optional_retrieve() -> Result<(), Box<dyn std
 }
 
 #[tokio::test]
+#[ignore = "requires RUNWAYML_API_SECRET and contacts the live Runway API"]
 async fn live_workflows_list_and_optional_retrieve() -> Result<(), Box<dyn std::error::Error>> {
     let client = live_client()?;
 
@@ -138,6 +141,7 @@ async fn live_workflows_list_and_optional_retrieve() -> Result<(), Box<dyn std::
 }
 
 #[tokio::test]
+#[ignore = "requires RUNWAYML_API_SECRET and may consume live account storage resources"]
 async fn live_upload_file_end_to_end() -> Result<(), Box<dyn std::error::Error>> {
     let client = live_client()?;
     let path = temp_png_path();
@@ -167,6 +171,7 @@ async fn live_upload_file_end_to_end() -> Result<(), Box<dyn std::error::Error>>
 }
 
 #[tokio::test]
+#[ignore = "requires RUNWAYML_API_SECRET and intentionally submits a billable generation"]
 async fn live_billable_text_to_speech_or_insufficient_credits(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let client = live_client()?;
@@ -182,7 +187,7 @@ async fn live_billable_text_to_speech_or_insufficient_credits(
             let task = pending
                 .wait_with_options(
                     WaitOptions::new()
-                        .poll_interval(Duration::from_secs(3))
+                        .poll_interval(Duration::from_secs(6))
                         .timeout(Duration::from_secs(180)),
                 )
                 .await?;
@@ -212,6 +217,7 @@ async fn live_billable_text_to_speech_or_insufficient_credits(
 }
 
 #[tokio::test]
+#[ignore = "requires RUNWAYML_API_SECRET and may consume live account storage resources"]
 async fn live_raw_upload_flow_with_metadata() -> Result<(), Box<dyn std::error::Error>> {
     let client = live_client()?;
 

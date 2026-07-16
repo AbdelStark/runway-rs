@@ -1,9 +1,71 @@
 use serde::{Deserialize, Serialize};
 
-use crate::types::common::{CursorPage, CursorPageQuery};
+use crate::types::common::CursorPage;
 
 pub type DocumentList = CursorPage<DocumentListItem>;
-pub type DocumentListQuery = CursorPageQuery;
+
+/// Sort direction for document listings.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[serde(rename_all = "lowercase")]
+pub enum DocumentSortOrder {
+    Asc,
+    Desc,
+}
+
+/// Field used to sort document listings.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
+pub enum DocumentSortField {
+    #[serde(rename = "createdAt")]
+    CreatedAt,
+    #[serde(rename = "updatedAt")]
+    UpdatedAt,
+}
+
+/// Cursor query for listing documents.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct DocumentListQuery {
+    pub order: DocumentSortOrder,
+    pub sort: DocumentSortField,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cursor: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub limit: Option<u32>,
+}
+
+impl DocumentListQuery {
+    pub fn new(order: DocumentSortOrder, sort: DocumentSortField) -> Self {
+        Self {
+            order,
+            sort,
+            cursor: None,
+            limit: None,
+        }
+    }
+
+    pub fn newest_first() -> Self {
+        Self::new(DocumentSortOrder::Desc, DocumentSortField::CreatedAt)
+    }
+
+    pub fn cursor(mut self, cursor: impl Into<String>) -> Self {
+        self.cursor = Some(cursor.into());
+        self
+    }
+
+    pub fn limit(mut self, limit: u32) -> Self {
+        self.limit = Some(limit);
+        self
+    }
+
+    pub fn validate(&self) -> Result<(), crate::RunwayError> {
+        if self.limit == Some(0) {
+            return Err(crate::RunwayError::Validation {
+                message: "Document list limit must be greater than zero".into(),
+            });
+        }
+        Ok(())
+    }
+}
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
 #[serde(rename_all = "lowercase")]

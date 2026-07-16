@@ -1,6 +1,9 @@
 #![forbid(unsafe_code)]
-#![cfg_attr(docsrs, feature(doc_auto_cfg, doc_cfg))]
+#![cfg_attr(docsrs, feature(doc_cfg))]
 //! Async Rust SDK for the [Runway API](https://docs.dev.runwayml.com/).
+//!
+//! This is an unofficial, community-maintained SDK and is not affiliated with
+//! or endorsed by Runway AI, Inc.
 //!
 //! `runway-sdk` provides typed request models, multipart upload helpers,
 //! task and workflow polling, and per-request overrides on top of `reqwest`.
@@ -24,7 +27,9 @@
 //!     .wait_for_output()
 //!     .await?;
 //!
-//! println!("Video URL: {}", task.output_urls().unwrap()[0]);
+//! if let Some(url) = task.output_urls().and_then(|urls| urls.first()) {
+//!     println!("Video URL: {url}");
+//! }
 //! # Ok(())
 //! # }
 //! ```
@@ -113,6 +118,8 @@
 //! | [`image_to_video()`](RunwayClient::image_to_video) | Animate images into video |
 //! | [`video_to_video()`](RunwayClient::video_to_video) | Transform existing video |
 //! | [`text_to_image()`](RunwayClient::text_to_image) | Generate images from text |
+//! | [`image_upscale()`](RunwayClient::image_upscale) | Upscale images |
+//! | [`video_upscale()`](RunwayClient::video_upscale) | Upscale videos |
 //! | [`text_to_speech()`](RunwayClient::text_to_speech) | Convert text to speech |
 //! | [`speech_to_speech()`](RunwayClient::speech_to_speech) | Voice conversion |
 //! | [`sound_effect()`](RunwayClient::sound_effect) | Generate sound effects |
@@ -122,15 +129,20 @@
 //! | [`tasks()`](RunwayClient::tasks) | Retrieve and delete tasks |
 //! | [`uploads()`](RunwayClient::uploads) | Upload media files |
 //! | [`avatars()`](RunwayClient::avatars) | Manage avatars |
+//! | [`avatar_conversations()`](RunwayClient::avatar_conversations) | Inspect avatar conversations |
+//! | [`avatar_videos()`](RunwayClient::avatar_videos) | Generate speaking-avatar videos |
 //! | [`voices()`](RunwayClient::voices) | Manage voice clones |
 //! | [`documents()`](RunwayClient::documents) | Manage documents |
+//! | [`realtime_sessions()`](RunwayClient::realtime_sessions) | Manage realtime avatar sessions |
+//! | [`recipes()`](RunwayClient::recipes) | Launch production recipes |
 //! | [`workflows()`](RunwayClient::workflows) | List and run workflows |
+//! | [`workflow_invocations()`](RunwayClient::workflow_invocations) | Retrieve workflow runs |
 //! | [`organization()`](RunwayClient::organization) | Organization info and usage |
 //!
 //! # Feature Flags
 //!
-//! - `unstable-endpoints`: enables `lip_sync`, `image_upscale`, and task
-//!   list/cancel helpers that are intentionally not part of the default surface.
+//! - `unstable-endpoints`: enables `lip_sync` and task list/cancel helpers that
+//!   are intentionally not part of the default surface.
 //! - `live-tests`: enables the real API smoke suite in `tests/live_api.rs`.
 //!
 //! # Task Lifecycle
@@ -154,8 +166,8 @@
 //!     .wait_for_output()
 //!     .await?;
 //!
-//! if let Some(urls) = task.output_urls() {
-//!     println!("Generated: {}", urls[0]);
+//! if let Some(url) = task.output_urls().and_then(|urls| urls.first()) {
+//!     println!("Generated: {url}");
 //! }
 //! # Ok(())
 //! # }
@@ -172,7 +184,7 @@
 //! # let client = RunwayClient::with_api_key("test")?;
 //! match client.tasks().retrieve(uuid::Uuid::new_v4()).await {
 //!     Ok(task) => println!("Task status: {}", task.status()),
-//!     Err(RunwayError::Unauthorized) => eprintln!("Check your API key"),
+//!     Err(RunwayError::Unauthorized { .. }) => eprintln!("Check your API key"),
 //!     Err(RunwayError::RateLimited { retry_after, .. }) => {
 //!         eprintln!("Rate limited, retry after {:?}", retry_after);
 //!     }
@@ -194,6 +206,6 @@ pub mod types;
 
 pub use client::{RequestOptions, ResponseMetadata, RunwayClient, WithResponse};
 pub use config::Config;
-pub use error::RunwayError;
+pub use error::{ApiErrorKind, ErrorResponseHeaders, ResponseBodyExcerpt, RunwayError};
 pub use polling::{PendingTask, PendingWorkflowInvocation, WaitOptions};
 pub use types::*;

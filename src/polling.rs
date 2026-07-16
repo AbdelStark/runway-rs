@@ -1,11 +1,13 @@
-use std::time::Duration;
+use std::future::{pending, Future};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::{Duration, SystemTime};
 
 use async_stream::try_stream;
 use futures_core::Stream;
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
-use crate::client::RunwayClient;
+use crate::client::{RequestOptions, RunwayClient};
 use crate::error::RunwayError;
 use crate::types::task::{Task, TaskStatus};
 use crate::types::workflow::{WorkflowInvocation, WorkflowInvocationStatus};
@@ -13,7 +15,10 @@ use crate::types::workflow::{WorkflowInvocation, WorkflowInvocationStatus};
 /// Overrides for task and workflow polling behavior.
 #[derive(Debug, Clone, Default)]
 pub struct WaitOptions {
-    /// Delay between status polls.
+    /// Target delay between status polls.
+    ///
+    /// Each wait, including the initial wait, is jittered by up to 25% to avoid
+    /// synchronized polling. Use at least five seconds against the live API.
     pub poll_interval: Option<Duration>,
     /// Maximum time to wait before returning a timeout error.
     pub timeout: Option<Duration>,
@@ -46,18 +51,143 @@ impl WaitOptions {
     }
 }
 
-async fn sleep_or_cancel(
-    duration: Duration,
-    cancellation_token: Option<&CancellationToken>,
-) -> Result<(), RunwayError> {
-    if let Some(cancellation_token) = cancellation_token {
-        tokio::select! {
-            _ = tokio::time::sleep(duration) => Ok(()),
-            _ = cancellation_token.cancelled() => Err(RunwayError::RequestAborted),
+fn validate_wait_options(poll_interval: Duration, timeout: Duration) -> Result<(), RunwayError> {
+    if poll_interval.is_zero() {
+        return Err(RunwayError::Validation {
+            message: "Poll interval must be greater than zero".into(),
+        });
+    }
+    if timeout.is_zero() {
+        return Err(RunwayError::Validation {
+            message: "Polling timeout must be greater than zero".into(),
+        });
+    }
+    Ok(())
+}
+
+static JITTER_SEQUENCE: AtomicU64 = AtomicU64::new(0);
+
+fn jittered_poll_interval(poll_interval: Duration) -> Duration {
+    let interval_nanos = poll_interval.as_nanos();
+    let max_jitter = interval_nanos / 4;
+    if max_jitter == 0 {
+        return poll_interval;
+    }
+
+    let sequence = JITTER_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+    let clock = SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos() as u64;
+    let entropy = clock ^ sequence.wrapping_mul(0x9e37_79b9_7f4a_7c15);
+    let jitter_span = max_jitter * 2 + 1;
+    let jittered_nanos = interval_nanos - max_jitter + u128::from(entropy) % jitter_span;
+    let jittered_nanos = jittered_nanos.min(Duration::MAX.as_nanos());
+
+    Duration::new(
+        (jittered_nanos / 1_000_000_000) as u64,
+        (jittered_nanos % 1_000_000_000) as u32,
+    )
+}
+
+struct PollDeadline {
+    started_at: tokio::time::Instant,
+    deadline: tokio::time::Instant,
+    cancellation_token: Option<CancellationToken>,
+}
+
+impl PollDeadline {
+    fn new(
+        timeout: Duration,
+        cancellation_token: Option<CancellationToken>,
+    ) -> Result<Self, RunwayError> {
+        let started_at = tokio::time::Instant::now();
+        let deadline = started_at
+            .checked_add(timeout)
+            .ok_or_else(|| RunwayError::Validation {
+                message: "Polling timeout is too large for the runtime clock".into(),
+            })?;
+        Ok(Self {
+            started_at,
+            deadline,
+            cancellation_token,
+        })
+    }
+
+    fn elapsed(&self) -> Duration {
+        self.started_at.elapsed()
+    }
+
+    fn remaining<E>(&self, timeout_error: &E) -> Result<Duration, RunwayError>
+    where
+        E: Fn(Duration) -> RunwayError,
+    {
+        if self
+            .cancellation_token
+            .as_ref()
+            .is_some_and(CancellationToken::is_cancelled)
+        {
+            return Err(RunwayError::RequestAborted);
         }
+
+        let remaining = self
+            .deadline
+            .checked_duration_since(tokio::time::Instant::now())
+            .filter(|remaining| !remaining.is_zero())
+            .ok_or_else(|| timeout_error(self.elapsed()))?;
+        Ok(remaining)
+    }
+
+    fn request_options<E>(&self, timeout_error: &E) -> Result<RequestOptions, RunwayError>
+    where
+        E: Fn(Duration) -> RunwayError,
+    {
+        let mut options = RequestOptions::new().timeout(self.remaining(timeout_error)?);
+        if let Some(cancellation_token) = &self.cancellation_token {
+            options = options.cancellation_token(cancellation_token.clone());
+        }
+        Ok(options)
+    }
+
+    async fn run<T, F, E>(&self, future: F, timeout_error: &E) -> Result<T, RunwayError>
+    where
+        F: Future<Output = Result<T, RunwayError>>,
+        E: Fn(Duration) -> RunwayError,
+    {
+        self.remaining(timeout_error)?;
+
+        tokio::select! {
+            biased;
+            _ = wait_for_cancellation(self.cancellation_token.as_ref()) => {
+                Err(RunwayError::RequestAborted)
+            }
+            _ = tokio::time::sleep_until(self.deadline) => {
+                Err(timeout_error(self.elapsed()))
+            }
+            result = future => result,
+        }
+    }
+
+    async fn sleep<E>(&self, duration: Duration, timeout_error: &E) -> Result<(), RunwayError>
+    where
+        E: Fn(Duration) -> RunwayError,
+    {
+        self.run(
+            async move {
+                tokio::time::sleep(duration).await;
+                Ok(())
+            },
+            timeout_error,
+        )
+        .await
+    }
+}
+
+async fn wait_for_cancellation(cancellation_token: Option<&CancellationToken>) {
+    if let Some(cancellation_token) = cancellation_token {
+        cancellation_token.cancelled().await;
     } else {
-        tokio::time::sleep(duration).await;
-        Ok(())
+        pending::<()>().await;
     }
 }
 
@@ -106,23 +236,33 @@ impl PendingTask {
         let max_duration = options
             .timeout
             .unwrap_or(self.client.inner.config.max_poll_duration);
-        let cancellation_token = options.cancellation_token;
-        let start = tokio::time::Instant::now();
+        validate_wait_options(poll_interval, max_duration)?;
+        let poll_deadline = PollDeadline::new(max_duration, options.cancellation_token)?;
+        let timeout_error = |elapsed| RunwayError::Timeout {
+            task_id: self.task_id,
+            elapsed,
+        };
 
-        sleep_or_cancel(Duration::from_secs(2), cancellation_token.as_ref()).await?;
+        poll_deadline
+            .sleep(jittered_poll_interval(poll_interval), &timeout_error)
+            .await?;
 
         loop {
-            let elapsed = start.elapsed();
-            if elapsed >= max_duration {
-                return Err(RunwayError::Timeout {
-                    task_id: self.task_id,
-                    elapsed,
-                });
-            }
-
-            let task: Task = self
-                .client
-                .get(&format!("/v1/tasks/{}", self.task_id))
+            let request_options = poll_deadline.request_options(&timeout_error)?;
+            let task: Task = poll_deadline
+                .run(
+                    async {
+                        Ok(self
+                            .client
+                            .get_with_options(
+                                &format!("/v1/tasks/{}", self.task_id),
+                                &request_options,
+                            )
+                            .await?
+                            .data)
+                    },
+                    &timeout_error,
+                )
                 .await?;
 
             match task.status() {
@@ -141,7 +281,9 @@ impl PendingTask {
                         task.status(),
                         task.progress()
                     );
-                    sleep_or_cancel(poll_interval, cancellation_token.as_ref()).await?;
+                    poll_deadline
+                        .sleep(jittered_poll_interval(poll_interval), &timeout_error)
+                        .await?;
                 }
             }
         }
@@ -162,14 +304,38 @@ impl PendingTask {
         let poll_interval = options
             .poll_interval
             .unwrap_or(client.inner.config.poll_interval);
+        let max_duration = options
+            .timeout
+            .unwrap_or(client.inner.config.max_poll_duration);
         let cancellation_token = options.cancellation_token;
 
         try_stream! {
-            sleep_or_cancel(Duration::from_secs(2), cancellation_token.as_ref()).await?;
+            validate_wait_options(poll_interval, max_duration)?;
+            let poll_deadline = PollDeadline::new(max_duration, cancellation_token)?;
+            let timeout_error = |elapsed| RunwayError::Timeout {
+                task_id,
+                elapsed,
+            };
+
+            poll_deadline
+                .sleep(jittered_poll_interval(poll_interval), &timeout_error)
+                .await?;
 
             loop {
-                let task: Task = client
-                    .get(&format!("/v1/tasks/{}", task_id))
+                let request_options = poll_deadline.request_options(&timeout_error)?;
+                let task: Task = poll_deadline
+                    .run(
+                        async {
+                            Ok(client
+                                .get_with_options(
+                                    &format!("/v1/tasks/{}", task_id),
+                                    &request_options,
+                                )
+                                .await?
+                                .data)
+                        },
+                        &timeout_error,
+                    )
                     .await?;
 
                 let is_terminal = task.is_terminal();
@@ -179,7 +345,9 @@ impl PendingTask {
                     break;
                 }
 
-                sleep_or_cancel(poll_interval, cancellation_token.as_ref()).await?;
+                poll_deadline
+                    .sleep(jittered_poll_interval(poll_interval), &timeout_error)
+                    .await?;
             }
         }
     }
@@ -236,23 +404,33 @@ impl PendingWorkflowInvocation {
         let max_duration = options
             .timeout
             .unwrap_or(self.client.inner.config.max_poll_duration);
-        let cancellation_token = options.cancellation_token;
-        let start = tokio::time::Instant::now();
+        validate_wait_options(poll_interval, max_duration)?;
+        let invocation_path =
+            RunwayClient::path(&["v1", "workflow_invocations", &self.invocation_id])?;
+        let poll_deadline = PollDeadline::new(max_duration, options.cancellation_token)?;
+        let timeout_invocation_id = self.invocation_id.clone();
+        let timeout_error = move |elapsed| RunwayError::WorkflowTimeout {
+            invocation_id: timeout_invocation_id.clone(),
+            elapsed,
+        };
 
-        sleep_or_cancel(Duration::from_secs(2), cancellation_token.as_ref()).await?;
+        poll_deadline
+            .sleep(jittered_poll_interval(poll_interval), &timeout_error)
+            .await?;
 
         loop {
-            let elapsed = start.elapsed();
-            if elapsed >= max_duration {
-                return Err(RunwayError::WorkflowTimeout {
-                    invocation_id: self.invocation_id.clone(),
-                    elapsed,
-                });
-            }
-
-            let invocation: WorkflowInvocation = self
-                .client
-                .get(&format!("/v1/workflow_invocations/{}", self.invocation_id))
+            let request_options = poll_deadline.request_options(&timeout_error)?;
+            let invocation: WorkflowInvocation = poll_deadline
+                .run(
+                    async {
+                        Ok(self
+                            .client
+                            .get_with_options(&invocation_path, &request_options)
+                            .await?
+                            .data)
+                    },
+                    &timeout_error,
+                )
                 .await?;
 
             match invocation.status() {
@@ -276,7 +454,9 @@ impl PendingWorkflowInvocation {
                         invocation.status(),
                         invocation.progress()
                     );
-                    sleep_or_cancel(poll_interval, cancellation_token.as_ref()).await?;
+                    poll_deadline
+                        .sleep(jittered_poll_interval(poll_interval), &timeout_error)
+                        .await?;
                 }
             }
         }
@@ -297,14 +477,41 @@ impl PendingWorkflowInvocation {
         let poll_interval = options
             .poll_interval
             .unwrap_or(client.inner.config.poll_interval);
+        let max_duration = options
+            .timeout
+            .unwrap_or(client.inner.config.max_poll_duration);
         let cancellation_token = options.cancellation_token;
 
         try_stream! {
-            sleep_or_cancel(Duration::from_secs(2), cancellation_token.as_ref()).await?;
+            validate_wait_options(poll_interval, max_duration)?;
+            let invocation_path = RunwayClient::path(&[
+                "v1",
+                "workflow_invocations",
+                &invocation_id,
+            ])?;
+            let poll_deadline = PollDeadline::new(max_duration, cancellation_token)?;
+            let timeout_invocation_id = invocation_id.clone();
+            let timeout_error = move |elapsed| RunwayError::WorkflowTimeout {
+                invocation_id: timeout_invocation_id.clone(),
+                elapsed,
+            };
+
+            poll_deadline
+                .sleep(jittered_poll_interval(poll_interval), &timeout_error)
+                .await?;
 
             loop {
-                let invocation: WorkflowInvocation = client
-                    .get(&format!("/v1/workflow_invocations/{}", invocation_id))
+                let request_options = poll_deadline.request_options(&timeout_error)?;
+                let invocation: WorkflowInvocation = poll_deadline
+                    .run(
+                        async {
+                            Ok(client
+                                .get_with_options(&invocation_path, &request_options)
+                                .await?
+                                .data)
+                        },
+                        &timeout_error,
+                    )
                     .await?;
 
                 let is_terminal = invocation.is_terminal();
@@ -314,8 +521,36 @@ impl PendingWorkflowInvocation {
                     break;
                 }
 
-                sleep_or_cancel(poll_interval, cancellation_token.as_ref()).await?;
+                poll_deadline
+                    .sleep(jittered_poll_interval(poll_interval), &timeout_error)
+                    .await?;
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn poll_jitter_stays_within_twenty_five_percent() {
+        let interval = Duration::from_secs(6);
+        let minimum = Duration::from_millis(4_500);
+        let maximum = Duration::from_millis(7_500);
+
+        for _ in 0..100 {
+            let jittered = jittered_poll_interval(interval);
+            assert!(jittered >= minimum, "{jittered:?} was below {minimum:?}");
+            assert!(jittered <= maximum, "{jittered:?} was above {maximum:?}");
+        }
+    }
+
+    #[test]
+    fn polling_deadline_rejects_clock_overflow() {
+        assert!(matches!(
+            PollDeadline::new(Duration::MAX, None),
+            Err(RunwayError::Validation { .. })
+        ));
     }
 }

@@ -27,7 +27,7 @@ impl SpeechToSpeechResource {
             .post_with_options("/v1/speech_to_speech", &request, &options)
             .await?;
         Ok(WithResponse {
-            data: PendingTask::new(self.client.clone(), response.data.id),
+            data: PendingTask::new(self.client.continuation_client(&options)?, response.data.id),
             response: response.response,
         })
     }

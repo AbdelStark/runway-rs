@@ -231,8 +231,8 @@ fn test_content_moderation_serialization() {
 #[test]
 fn test_client_with_api_key() {
     let client = RunwayClient::with_api_key("test-key-123").unwrap();
-    assert_eq!(client.inner.config.api_key, "test-key-123");
-    assert_eq!(client.inner.config.base_url, "https://api.dev.runwayml.com");
+    assert_eq!(client.config().base_url, "https://api.dev.runwayml.com");
+    assert!(!format!("{client:?}").contains("test-key-123"));
 }
 
 #[test]
@@ -372,7 +372,7 @@ fn test_create_voice_request_serialization() {
     let json = serde_json::to_value(&req).unwrap();
     assert_eq!(json["name"], "My Voice");
     assert_eq!(json["from"]["type"], "text");
-    assert_eq!(json["from"]["model"], "eleven_multilingual_ttv_v2");
+    assert_eq!(json["from"]["model"], "eleven_ttv_v3");
     assert_eq!(
         json["from"]["prompt"],
         "Warm, cinematic narrator with confident pacing"
@@ -389,7 +389,7 @@ fn test_preview_voice_request_serialization() {
         json["prompt"],
         "Warm and expressive voice for product demos"
     );
-    assert_eq!(json["model"], "eleven_multilingual_ttv_v2");
+    assert_eq!(json["model"], "eleven_ttv_v3");
 }
 
 #[test]
@@ -474,37 +474,34 @@ fn test_lip_sync_request_minimal() {
     assert!(json.get("seed").is_none());
 }
 
-#[cfg(feature = "unstable-endpoints")]
 // ── Image Upscale ───────────────────────────────────────────────────────
-#[cfg(feature = "unstable-endpoints")]
 #[test]
 fn test_image_upscale_request_serialization() {
-    let req = ImageUpscaleRequest::new(
-        ImageModel::Gen4ImageTurbo,
-        MediaInput::from_url("https://example.com/img.jpg"),
-    )
-    .resolution(4096)
-    .seed(7);
+    let req = ImageUpscaleCreateRequest::new("https://example.com/img.jpg")
+        .flavor(ImageUpscaleFlavor::Photo)
+        .scale_factor(ImageUpscaleScaleFactor::X4)
+        .sharpen(25.0)
+        .smart_grain(50.0)
+        .ultra_detail(75.0);
 
     let json = serde_json::to_value(&req).unwrap();
-    assert_eq!(json["model"], "gen4_image_turbo");
-    assert_eq!(json["promptImage"], "https://example.com/img.jpg");
-    assert_eq!(json["resolution"], 4096);
-    assert_eq!(json["seed"], 7);
+    assert_eq!(json["model"], "magnific_precision_upscaler_v2");
+    assert_eq!(json["imageUri"], "https://example.com/img.jpg");
+    assert_eq!(json["flavor"], "photo");
+    assert_eq!(json["scaleFactor"], 4);
+    assert_eq!(json["sharpen"], 25.0);
+    assert_eq!(json["smartGrain"], 50.0);
+    assert_eq!(json["ultraDetail"], 75.0);
 }
 
-#[cfg(feature = "unstable-endpoints")]
 #[test]
 fn test_image_upscale_request_minimal() {
-    let req = ImageUpscaleRequest::new(
-        ImageModel::Gen4Image,
-        MediaInput::from_url("https://example.com/low_res.png"),
-    );
+    let req = ImageUpscaleCreateRequest::new("https://example.com/low_res.png");
 
     let json = serde_json::to_value(&req).unwrap();
-    assert_eq!(json["model"], "gen4_image");
-    assert!(json.get("resolution").is_none());
-    assert!(json.get("seed").is_none());
+    assert_eq!(json["model"], "magnific_precision_upscaler_v2");
+    assert!(json.get("scaleFactor").is_none());
+    assert!(json.get("flavor").is_none());
 }
 
 #[cfg(feature = "unstable-endpoints")]
@@ -612,7 +609,6 @@ fn test_config_builder() {
         .poll_interval(Duration::from_secs(10))
         .max_poll_duration(Duration::from_secs(300));
 
-    assert_eq!(config.api_key, "key");
     assert_eq!(config.base_url, "https://custom.api.com");
     assert_eq!(config.api_version, "2025-01-01");
     assert_eq!(config.timeout, Duration::from_secs(60));

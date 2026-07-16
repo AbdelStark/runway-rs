@@ -1,0 +1,38 @@
+name: Live API tests
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm_cost:
+        description: Type RUN LIVE TESTS to confirm use of credentials and possible API charges
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  live-api:
+    if: ${{ inputs.confirm_cost == 'RUN LIVE TESTS' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      CARGO_TERM_COLOR: always
+      RUSTFLAGS: -Dwarnings
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - name: Install stable Rust
+        uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
+      - name: Restore Rust cache
+        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+      - name: Require the live API credential
+        env:
+          RUNWAYML_API_SECRET: ${{ secrets.RUNWAYML_API_SECRET }}
+        run: test -n "$RUNWAYML_API_SECRET"
+      - name: Run ignored live API tests serially
+        env:
+          RUNWAYML_API_SECRET: ${{ secrets.RUNWAYML_API_SECRET }}
+        run: cargo test --locked --all-features --test live_api -- --ignored --test-threads=1 --nocapture

@@ -1,10 +1,13 @@
-use runway_sdk::{CreateDocumentRequest, CursorPageQuery, RunwayClient, UpdateDocumentRequest};
+use runway_sdk::{CreateDocumentRequest, DocumentListQuery, RunwayClient, UpdateDocumentRequest};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let client = RunwayClient::new()?;
 
-    let docs = client.documents().list(CursorPageQuery::new()).await?;
+    let docs = client
+        .documents()
+        .list(DocumentListQuery::newest_first())
+        .await?;
     println!("Documents on this page: {}", docs.data.len());
     for doc in &docs.data {
         println!("  - {} ({})", doc.name, doc.id);

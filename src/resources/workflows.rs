@@ -36,9 +36,8 @@ impl WorkflowsResource {
         id: &str,
         options: RequestOptions,
     ) -> Result<WithResponse<Workflow>, RunwayError> {
-        self.client
-            .get_with_options(&format!("/v1/workflows/{}", id), &options)
-            .await
+        let path = RunwayClient::path(&["v1", "workflows", id])?;
+        self.client.get_with_options(&path, &options).await
     }
 
     pub async fn get(&self, id: &str) -> Result<Workflow, RunwayError> {
@@ -62,8 +61,9 @@ impl WorkflowsResource {
         request: RunWorkflowRequest,
         options: RequestOptions,
     ) -> Result<WithResponse<WorkflowRunResponse>, RunwayError> {
+        let path = RunwayClient::path(&["v1", "workflows", id])?;
         self.client
-            .post_with_options(&format!("/v1/workflows/{}", id), &request, &options)
+            .post_with_options(&path, &request, &options)
             .await
     }
 
@@ -84,9 +84,10 @@ impl WorkflowsResource {
         request: RunWorkflowRequest,
         options: RequestOptions,
     ) -> Result<WithResponse<PendingWorkflowInvocation>, RunwayError> {
+        let continuation_client = self.client.continuation_client(&options)?;
         let response = self.run_with_options(id, request, options).await?;
         Ok(WithResponse {
-            data: PendingWorkflowInvocation::new(self.client.clone(), response.data.id),
+            data: PendingWorkflowInvocation::new(continuation_client, response.data.id),
             response: response.response,
         })
     }

@@ -1,0 +1,44 @@
+name: Feature request
+description: Propose a focused SDK capability or ergonomic improvement.
+title: "[Feature]: "
+labels:
+  - enhancement
+body:
+  - type: markdown
+    attributes:
+      value: |
+        This is an unofficial SDK. For API additions, please link the official Runway contract that makes the feature implementable.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What user need or limitation should the SDK address?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed API or behavior
+      description: Show a concise Rust usage example when possible.
+      render: rust
+    validations:
+      required: true
+  - type: input
+    id: contract
+    attributes:
+      label: Official upstream evidence
+      description: Link the relevant official Runway API documentation.
+      placeholder: https://docs.dev.runwayml.com/...
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+  - type: checkboxes
+    id: compatibility
+    attributes:
+      label: Compatibility
+      options:
+        - label: I considered how this affects existing public SDK APIs.
+          required: true
+        - label: I searched existing issues for related work.
+          required: true

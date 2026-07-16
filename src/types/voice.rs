@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
+use crate::error::RunwayError;
 use crate::types::common::{CursorPage, CursorPageQuery};
 
 pub type VoiceList = CursorPage<Voice>;
@@ -116,7 +117,7 @@ pub struct CreateVoiceRequest {
     pub from: VoiceFrom,
     pub name: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub description: Option<String>,
+    pub description: Option<Option<String>>,
 }
 
 impl CreateVoiceRequest {
@@ -129,7 +130,13 @@ impl CreateVoiceRequest {
     }
 
     pub fn description(mut self, description: impl Into<String>) -> Self {
-        self.description = Some(description.into());
+        self.description = Some(Some(description.into()));
+        self
+    }
+
+    /// Explicitly clear the voice description by sending JSON `null`.
+    pub fn clear_description(mut self) -> Self {
+        self.description = Some(None);
         self
     }
 
@@ -137,35 +144,123 @@ impl CreateVoiceRequest {
         self.from = from;
         self
     }
-}
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "camelCase")]
-pub struct VoiceFrom {
-    pub model: VoiceDesignModel,
-    pub prompt: String,
-    #[serde(rename = "type")]
-    pub source_type: VoiceFromType,
-}
-
-impl VoiceFrom {
-    pub fn text(prompt: impl Into<String>) -> Self {
+    /// Create a custom voice by cloning a source audio URL.
+    pub fn from_audio(name: impl Into<String>, audio: impl Into<String>) -> Self {
         Self {
-            model: VoiceDesignModel::ElevenMultilingualTtvV2,
-            prompt: prompt.into(),
-            source_type: VoiceFromType::Text,
+            from: VoiceFrom::audio(audio),
+            name: name.into(),
+            description: None,
         }
     }
 
-    pub fn model(mut self, model: VoiceDesignModel) -> Self {
-        self.model = model;
+    /// Validate the selected source before transport.
+    pub fn validate(&self) -> Result<(), RunwayError> {
+        self.from.validate()
+    }
+}
+
+/// Mutable fields accepted by the custom-voice update endpoint.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateVoiceRequest {
+    /// Description update. `Some(None)` explicitly clears the description.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<Option<String>>,
+    /// New display name, when supplied.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+}
+
+impl UpdateVoiceRequest {
+    /// Create an update with no fields set.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Replace the voice description.
+    pub fn description(mut self, description: impl Into<String>) -> Self {
+        self.description = Some(Some(description.into()));
         self
+    }
+
+    /// Explicitly clear the voice description by sending JSON `null`.
+    pub fn clear_description(mut self) -> Self {
+        self.description = Some(None);
+        self
+    }
+
+    /// Replace the voice display name.
+    pub fn name(mut self, name: impl Into<String>) -> Self {
+        self.name = Some(name.into());
+        self
+    }
+}
+
+/// Source used to create a custom voice.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(tag = "type", rename_all = "lowercase")]
+pub enum VoiceFrom {
+    /// Clone a voice from an HTTPS audio URL.
+    Audio { audio: String },
+    /// Design a voice from a textual description.
+    Text {
+        model: VoiceDesignModel,
+        prompt: String,
+    },
+}
+
+impl VoiceFrom {
+    /// Create an audio-cloning source.
+    pub fn audio(audio: impl Into<String>) -> Self {
+        Self::Audio {
+            audio: audio.into(),
+        }
+    }
+
+    /// Create a text-designed source using the latest preferred model.
+    pub fn text(prompt: impl Into<String>) -> Self {
+        Self::Text {
+            model: VoiceDesignModel::ElevenTtvV3,
+            prompt: prompt.into(),
+        }
+    }
+
+    /// Override the design model for a text source.
+    ///
+    /// Audio sources have no model field and are returned unchanged.
+    pub fn model(mut self, model: VoiceDesignModel) -> Self {
+        if let Self::Text {
+            model: current_model,
+            ..
+        } = &mut self
+        {
+            *current_model = model;
+        }
+        self
+    }
+
+    /// Return the source discriminator.
+    pub fn source_type(&self) -> VoiceFromType {
+        match self {
+            Self::Audio { .. } => VoiceFromType::Audio,
+            Self::Text { .. } => VoiceFromType::Text,
+        }
+    }
+
+    /// Validate documented source constraints.
+    pub fn validate(&self) -> Result<(), RunwayError> {
+        if let Self::Text { prompt, .. } = self {
+            validate_voice_design_prompt(prompt)?;
+        }
+        Ok(())
     }
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
 #[serde(rename_all = "lowercase")]
 pub enum VoiceFromType {
+    Audio,
     Text,
 }
 
@@ -179,7 +274,7 @@ pub struct PreviewVoiceRequest {
 impl PreviewVoiceRequest {
     pub fn new(prompt: impl Into<String>) -> Self {
         Self {
-            model: VoiceDesignModel::ElevenMultilingualTtvV2,
+            model: VoiceDesignModel::ElevenTtvV3,
             prompt: prompt.into(),
         }
     }
@@ -188,6 +283,20 @@ impl PreviewVoiceRequest {
         self.model = model;
         self
     }
+
+    /// Validate the documented prompt minimum.
+    pub fn validate(&self) -> Result<(), RunwayError> {
+        validate_voice_design_prompt(&self.prompt)
+    }
+}
+
+fn validate_voice_design_prompt(prompt: &str) -> Result<(), RunwayError> {
+    if prompt.chars().count() < 20 {
+        return Err(RunwayError::Validation {
+            message: "Voice design prompt must contain at least 20 characters".into(),
+        });
+    }
+    Ok(())
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

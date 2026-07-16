@@ -20,9 +20,8 @@ impl WorkflowInvocationsResource {
         id: &str,
         options: RequestOptions,
     ) -> Result<WithResponse<WorkflowInvocation>, RunwayError> {
-        self.client
-            .get_with_options(&format!("/v1/workflow_invocations/{}", id), &options)
-            .await
+        let path = RunwayClient::path(&["v1", "workflow_invocations", id])?;
+        self.client.get_with_options(&path, &options).await
     }
 
     pub async fn get(&self, id: &str) -> Result<WorkflowInvocation, RunwayError> {

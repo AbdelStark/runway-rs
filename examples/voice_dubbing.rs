@@ -14,6 +14,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .wait_for_output()
         .await?;
 
-    println!("Dubbed audio URL: {}", task.output_urls().unwrap()[0]);
+    if let Some(url) = task.output_urls().and_then(|urls| urls.first()) {
+        println!("Dubbed audio URL: {url}");
+    }
     Ok(())
 }

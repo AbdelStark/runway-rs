@@ -21,9 +21,68 @@ impl DocumentsResource {
         query: DocumentListQuery,
         options: RequestOptions,
     ) -> Result<WithResponse<DocumentList>, RunwayError> {
+        query.validate()?;
         self.client
             .get_with_query_with_options("/v1/documents", &query, &options)
             .await
+    }
+
+    /// Stream document pages until the server returns no next cursor.
+    pub fn list_pages(
+        &self,
+        query: DocumentListQuery,
+    ) -> impl Stream<Item = Result<DocumentList, RunwayError>> {
+        let client = self.client.clone();
+        try_stream! {
+            query.validate()?;
+            let mut query = query;
+            loop {
+                let page: DocumentList = client
+                    .get_with_query_with_options(
+                        "/v1/documents",
+                        &query,
+                        &RequestOptions::default(),
+                    )
+                    .await?
+                    .data;
+                let next_cursor = page.next_cursor.clone();
+                yield page;
+                let Some(next_cursor) = next_cursor.filter(|cursor| !cursor.is_empty()) else {
+                    break;
+                };
+                query.cursor = Some(next_cursor);
+            }
+        }
+    }
+
+    /// Stream individual documents across every cursor page.
+    pub fn list_all(
+        &self,
+        query: DocumentListQuery,
+    ) -> impl Stream<Item = Result<crate::types::document::DocumentListItem, RunwayError>> {
+        let client = self.client.clone();
+        try_stream! {
+            query.validate()?;
+            let mut query = query;
+            loop {
+                let page: DocumentList = client
+                    .get_with_query_with_options(
+                        "/v1/documents",
+                        &query,
+                        &RequestOptions::default(),
+                    )
+                    .await?
+                    .data;
+                let next_cursor = page.next_cursor.clone();
+                for document in page.data {
+                    yield document;
+                }
+                let Some(next_cursor) = next_cursor.filter(|cursor| !cursor.is_empty()) else {
+                    break;
+                };
+                query.cursor = Some(next_cursor);
+            }
+        }
     }
 
     pub async fn retrieve(&self, id: &str) -> Result<Document, RunwayError> {
@@ -38,9 +97,8 @@ impl DocumentsResource {
         id: &str,
         options: RequestOptions,
     ) -> Result<WithResponse<Document>, RunwayError> {
-        self.client
-            .get_with_options(&format!("/v1/documents/{}", id), &options)
-            .await
+        let path = RunwayClient::path(&["v1", "documents", id])?;
+        self.client.get_with_options(&path, &options).await
     }
 
     pub async fn create(&self, request: CreateDocumentRequest) -> Result<Document, RunwayError> {
@@ -76,8 +134,9 @@ impl DocumentsResource {
         request: UpdateDocumentRequest,
         options: RequestOptions,
     ) -> Result<WithResponse<()>, RunwayError> {
+        let path = RunwayClient::path(&["v1", "documents", id])?;
         self.client
-            .patch_empty_with_options(&format!("/v1/documents/{}", id), &request, &options)
+            .patch_empty_with_options(&path, &request, &options)
             .await
     }
 
@@ -92,12 +151,13 @@ impl DocumentsResource {
         id: &str,
         options: RequestOptions,
     ) -> Result<WithResponse<()>, RunwayError> {
-        self.client
-            .delete_with_options(&format!("/v1/documents/{}", id), &options)
-            .await
+        let path = RunwayClient::path(&["v1", "documents", id])?;
+        self.client.delete_with_options(&path, &options).await
     }
 
     pub async fn get(&self, id: &str) -> Result<Document, RunwayError> {
         self.retrieve(id).await
     }
 }
+use async_stream::try_stream;
+use futures_core::Stream;

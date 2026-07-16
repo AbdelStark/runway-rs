@@ -19,6 +19,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .wait_for_output()
         .await?;
 
-    println!("Image URL: {}", task.output_urls().unwrap()[0]);
+    if let Some(url) = task.output_urls().and_then(|urls| urls.first()) {
+        println!("Image URL: {url}");
+    }
     Ok(())
 }

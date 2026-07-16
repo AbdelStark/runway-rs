@@ -6,6 +6,51 @@ use crate::types::common::{CursorPage, CursorPageQuery};
 pub type AvatarList = CursorPage<Avatar>;
 pub type AvatarListQuery = CursorPageQuery;
 
+/// Required UTC date range for aggregate avatar-conversation usage.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct AvatarUsageQuery {
+    /// Exclusive end of the usage date range.
+    pub end_date: String,
+    /// Inclusive start of the usage date range.
+    pub start_date: String,
+}
+
+impl AvatarUsageQuery {
+    /// Create an avatar-usage query for an inclusive/exclusive UTC date range.
+    pub fn new(start_date: impl Into<String>, end_date: impl Into<String>) -> Self {
+        Self {
+            end_date: end_date.into(),
+            start_date: start_date.into(),
+        }
+    }
+}
+
+/// Aggregate avatar-conversation usage returned by the Runway API.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct AvatarUsage {
+    /// Average duration in seconds across conversations with measured durations.
+    pub avg_duration_seconds: u64,
+    /// Per-day usage buckets, including zero-usage days.
+    pub by_day: Vec<AvatarUsageDay>,
+    /// Total measured conversation duration in seconds.
+    pub total_seconds: u64,
+    /// Total number of conversations started in the date range.
+    pub total_sessions: u64,
+}
+
+/// Usage totals for one UTC calendar date.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct AvatarUsageDay {
+    /// UTC calendar date in `YYYY-MM-DD` format.
+    pub date: String,
+    /// Measured conversation duration on this date, in seconds.
+    pub seconds: u64,
+    /// Number of conversations started on this date.
+    pub sessions: u64,
+}
+
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum AvatarStatus {

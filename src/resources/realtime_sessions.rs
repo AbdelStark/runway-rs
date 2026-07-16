@@ -24,6 +24,7 @@ impl RealtimeSessionsResource {
         request: CreateRealtimeSessionRequest,
         options: RequestOptions,
     ) -> Result<WithResponse<RealtimeSessionCreateResponse>, RunwayError> {
+        request.validate()?;
         self.client
             .post_with_options("/v1/realtime_sessions", &request, &options)
             .await
@@ -41,9 +42,8 @@ impl RealtimeSessionsResource {
         id: &str,
         options: RequestOptions,
     ) -> Result<WithResponse<RealtimeSession>, RunwayError> {
-        self.client
-            .get_with_options(&format!("/v1/realtime_sessions/{}", id), &options)
-            .await
+        let path = RunwayClient::path(&["v1", "realtime_sessions", id])?;
+        self.client.get_with_options(&path, &options).await
     }
 
     pub async fn delete(&self, id: &str) -> Result<(), RunwayError> {
@@ -57,9 +57,8 @@ impl RealtimeSessionsResource {
         id: &str,
         options: RequestOptions,
     ) -> Result<WithResponse<()>, RunwayError> {
-        self.client
-            .delete_with_options(&format!("/v1/realtime_sessions/{}", id), &options)
-            .await
+        let path = RunwayClient::path(&["v1", "realtime_sessions", id])?;
+        self.client.delete_with_options(&path, &options).await
     }
 
     pub async fn get(&self, id: &str) -> Result<RealtimeSession, RunwayError> {

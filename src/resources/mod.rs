@@ -5,16 +5,18 @@
 //! [`RunwayClient`](crate::RunwayClient)
 //! rather than instantiating them directly.
 
+pub mod avatar_conversations;
+pub mod avatar_videos;
 pub mod avatars;
 pub mod character_performance;
 pub mod documents;
 pub mod image_to_video;
-#[cfg(feature = "unstable-endpoints")]
 pub mod image_upscale;
 #[cfg(feature = "unstable-endpoints")]
 pub mod lip_sync;
 pub mod organization;
 pub mod realtime_sessions;
+pub mod recipes;
 pub mod sound_effect;
 pub mod speech_to_speech;
 pub mod tasks;
@@ -23,22 +25,25 @@ pub mod text_to_speech;
 pub mod text_to_video;
 pub mod uploads;
 pub mod video_to_video;
+pub mod video_upscale;
 pub mod voice_dubbing;
 pub mod voice_isolation;
 pub mod voices;
 pub mod workflow_invocations;
 pub mod workflows;
 
+pub use avatar_conversations::AvatarConversationsResource;
+pub use avatar_videos::AvatarVideosResource;
 pub use avatars::AvatarsResource;
 pub use character_performance::CharacterPerformanceResource;
 pub use documents::DocumentsResource;
 pub use image_to_video::ImageToVideoResource;
-#[cfg(feature = "unstable-endpoints")]
 pub use image_upscale::ImageUpscaleResource;
 #[cfg(feature = "unstable-endpoints")]
 pub use lip_sync::LipSyncResource;
 pub use organization::OrganizationResource;
 pub use realtime_sessions::RealtimeSessionsResource;
+pub use recipes::RecipesResource;
 pub use sound_effect::SoundEffectResource;
 pub use speech_to_speech::SpeechToSpeechResource;
 pub use tasks::TasksResource;
@@ -47,6 +52,7 @@ pub use text_to_speech::TextToSpeechResource;
 pub use text_to_video::TextToVideoResource;
 pub use uploads::UploadsResource;
 pub use video_to_video::VideoToVideoResource;
+pub use video_upscale::VideoUpscaleResource;
 pub use voice_dubbing::VoiceDubbingResource;
 pub use voice_isolation::VoiceIsolationResource;
 pub use voices::VoicesResource;

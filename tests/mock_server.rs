@@ -1,6 +1,7 @@
 use futures::StreamExt;
 use runway_sdk::*;
 use std::time::Duration;
+use tokio_util::sync::CancellationToken;
 use wiremock::matchers::{body_json, header, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
@@ -130,7 +131,7 @@ async fn test_unauthorized_error() {
     let task_id = uuid::Uuid::parse_str("550e8400-e29b-41d4-a716-446655440000").unwrap();
 
     let result = client.tasks().retrieve(task_id).await;
-    assert!(matches!(result, Err(RunwayError::Unauthorized)));
+    assert!(matches!(result, Err(RunwayError::Unauthorized { .. })));
 }
 
 #[tokio::test]
@@ -169,7 +170,7 @@ async fn test_rate_limit_retry() {
 
     Mock::given(method("POST"))
         .and(path("/v1/text_to_video"))
-        .respond_with(ResponseTemplate::new(429).append_header("retry-after", "1"))
+        .respond_with(ResponseTemplate::new(429).append_header("retry-after-ms", "1"))
         .expect(1)
         .up_to_n_times(1)
         .mount(&mock_server)
@@ -188,16 +189,15 @@ async fn test_rate_limit_retry() {
 
     let pending = client
         .text_to_video()
-        .create(TextToVideoGen45Request::new(
-            "test prompt",
-            VideoRatio::Landscape,
-            5,
-        ))
+        .create_with_options(
+            TextToVideoGen45Request::new("test prompt", VideoRatio::Landscape, 5),
+            RequestOptions::new().idempotency_key("rate-limit-retry"),
+        )
         .await
         .unwrap();
 
     assert_eq!(
-        pending.id().to_string(),
+        pending.data.id().to_string(),
         "550e8400-e29b-41d4-a716-446655440000"
     );
 }
@@ -340,7 +340,7 @@ async fn test_documents_list() {
     let client = RunwayClient::with_config(test_config(&mock_server.uri())).unwrap();
     let list = client
         .documents()
-        .list(CursorPageQuery::new())
+        .list(DocumentListQuery::newest_first())
         .await
         .unwrap();
     assert_eq!(list.data.len(), 2);
@@ -1021,6 +1021,86 @@ async fn test_workflow_invocation_get() {
     );
 }
 
+#[tokio::test]
+async fn test_workflow_polling_deadline_covers_in_flight_request() {
+    let mock_server = MockServer::start().await;
+
+    Mock::given(method("GET"))
+        .and(path("/v1/workflow_invocations/inv-timeout"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_delay(Duration::from_secs(2))
+                .set_body_json(serde_json::json!({
+                    "id": "inv-timeout",
+                    "status": "RUNNING",
+                    "createdAt": "2024-01-01T00:00:00Z",
+                    "progress": 0.5
+                })),
+        )
+        .expect(1)
+        .mount(&mock_server)
+        .await;
+
+    let client = RunwayClient::with_config(test_config(&mock_server.uri())).unwrap();
+    let pending = client.workflow_invocations().pending("inv-timeout");
+
+    let result = tokio::time::timeout(
+        Duration::from_secs(1),
+        pending.wait_with_config(Duration::from_millis(10), Duration::from_millis(150)),
+    )
+    .await
+    .expect("the workflow polling deadline should cancel a slow status request");
+
+    assert!(matches!(
+        result,
+        Err(RunwayError::WorkflowTimeout { invocation_id, .. })
+            if invocation_id == "inv-timeout"
+    ));
+}
+
+#[tokio::test]
+async fn test_workflow_status_stream_honors_absolute_timeout() {
+    let mock_server = MockServer::start().await;
+
+    Mock::given(method("GET"))
+        .and(path("/v1/workflow_invocations/inv-stream-timeout"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "id": "inv-stream-timeout",
+            "status": "RUNNING",
+            "createdAt": "2024-01-01T00:00:00Z",
+            "output": {},
+            "progress": 0.5
+        })))
+        .expect(1..)
+        .mount(&mock_server)
+        .await;
+
+    let client = RunwayClient::with_config(test_config(&mock_server.uri())).unwrap();
+    let pending = client.workflow_invocations().pending("inv-stream-timeout");
+
+    let updates = tokio::time::timeout(
+        Duration::from_secs(1),
+        pending
+            .stream_status_with_options(
+                WaitOptions::new()
+                    .poll_interval(Duration::from_millis(10))
+                    .timeout(Duration::from_millis(120)),
+            )
+            .collect::<Vec<_>>(),
+    )
+    .await
+    .expect("workflow stream timeout should terminate status polling");
+
+    assert!(updates.iter().any(
+        |update| matches!(update, Ok(invocation) if invocation.status() == WorkflowInvocationStatus::Running)
+    ));
+    assert!(matches!(
+        updates.last(),
+        Some(Err(RunwayError::WorkflowTimeout { invocation_id, .. }))
+            if invocation_id == "inv-stream-timeout"
+    ));
+}
+
 // ── Upload file full flow test ───────────────────────────────────────────
 
 #[tokio::test]
@@ -1087,7 +1167,7 @@ async fn test_delete_unauthorized() {
     let task_id = uuid::Uuid::parse_str("550e8400-e29b-41d4-a716-446655440000").unwrap();
 
     let result = client.tasks().delete(task_id).await;
-    assert!(matches!(result, Err(RunwayError::Unauthorized)));
+    assert!(matches!(result, Err(RunwayError::Unauthorized { .. })));
 }
 
 #[tokio::test]
@@ -1122,7 +1202,7 @@ async fn test_delete_rate_limit_retry() {
     // First request returns 429, second returns 204
     Mock::given(method("DELETE"))
         .and(path("/v1/avatars/av-1"))
-        .respond_with(ResponseTemplate::new(429).append_header("retry-after", "1"))
+        .respond_with(ResponseTemplate::new(429).append_header("retry-after-ms", "1"))
         .expect(1)
         .up_to_n_times(1)
         .mount(&mock_server)
@@ -1179,9 +1259,14 @@ async fn test_patch_rate_limit_retry() {
     let client = RunwayClient::with_config(test_config(&mock_server.uri())).unwrap();
     let avatar = client
         .avatars()
-        .update("av-1", UpdateAvatarRequest::new().name("Updated"))
+        .update_with_options(
+            "av-1",
+            UpdateAvatarRequest::new().name("Updated"),
+            RequestOptions::new().idempotency_key("avatar-update-retry"),
+        )
         .await
-        .unwrap();
+        .unwrap()
+        .data;
     assert_eq!(avatar.name(), "Updated");
 }
 
@@ -1380,9 +1465,7 @@ async fn test_lip_sync_create_with_options() {
     );
 }
 
-#[cfg(feature = "unstable-endpoints")]
 // ── Image Upscale tests ─────────────────────────────────────────────────
-#[cfg(feature = "unstable-endpoints")]
 #[tokio::test]
 async fn test_image_upscale_create() {
     let mock_server = MockServer::start().await;
@@ -1390,6 +1473,10 @@ async fn test_image_upscale_create() {
     Mock::given(method("POST"))
         .and(path("/v1/image_upscale"))
         .and(header("Authorization", "Bearer test-api-key-12345"))
+        .and(body_json(serde_json::json!({
+            "imageUri": "https://example.com/low_res.jpg",
+            "model": "magnific_precision_upscaler_v2"
+        })))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
             "id": "cc0e8400-e29b-41d4-a716-446655440000"
         })))
@@ -1401,9 +1488,8 @@ async fn test_image_upscale_create() {
 
     let pending = client
         .image_upscale()
-        .create(ImageUpscaleRequest::new(
-            ImageModel::Gen4ImageTurbo,
-            MediaInput::from_url("https://example.com/low_res.jpg"),
+        .create(ImageUpscaleCreateRequest::new(
+            "https://example.com/low_res.jpg",
         ))
         .await
         .unwrap();
@@ -1414,13 +1500,22 @@ async fn test_image_upscale_create() {
     );
 }
 
-#[cfg(feature = "unstable-endpoints")]
 #[tokio::test]
 async fn test_image_upscale_create_with_options() {
     let mock_server = MockServer::start().await;
 
     Mock::given(method("POST"))
         .and(path("/v1/image_upscale"))
+        .and(header("x-test-request", "upscale"))
+        .and(body_json(serde_json::json!({
+            "imageUri": "https://example.com/img.png",
+            "model": "magnific_precision_upscaler_v2",
+            "flavor": "photo_denoiser",
+            "scaleFactor": 4,
+            "sharpen": 25.0,
+            "smartGrain": 50.0,
+            "ultraDetail": 75.0
+        })))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
             "id": "dd0e8400-e29b-41d4-a716-446655440000"
         })))
@@ -1432,16 +1527,20 @@ async fn test_image_upscale_create_with_options() {
 
     let pending = client
         .image_upscale()
-        .create(
-            ImageUpscaleRequest::new(
-                ImageModel::Gen4Image,
-                MediaInput::from_url("https://example.com/img.png"),
-            )
-            .resolution(4096)
-            .seed(7),
+        .create_with_options(
+            ImageUpscaleCreateRequest::new("https://example.com/img.png")
+                .flavor(ImageUpscaleFlavor::PhotoDenoiser)
+                .scale_factor(ImageUpscaleScaleFactor::X4)
+                .sharpen(25.0)
+                .smart_grain(50.0)
+                .ultra_detail(75.0),
+            RequestOptions::new()
+                .header("x-test-request", "upscale")
+                .unwrap(),
         )
         .await
-        .unwrap();
+        .unwrap()
+        .data;
 
     assert_eq!(
         pending.id().to_string(),
@@ -1623,6 +1722,64 @@ async fn test_stream_status_failure() {
     assert_eq!(task.failure(), Some("Invalid audio format"));
 }
 
+#[tokio::test]
+async fn test_stream_status_honors_absolute_timeout() {
+    let mock_server = MockServer::start().await;
+
+    Mock::given(method("POST"))
+        .and(path("/v1/text_to_video"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "id": "675e8400-e29b-41d4-a716-446655440000"
+        })))
+        .expect(1)
+        .mount(&mock_server)
+        .await;
+
+    Mock::given(method("GET"))
+        .and(path("/v1/tasks/675e8400-e29b-41d4-a716-446655440000"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "id": "675e8400-e29b-41d4-a716-446655440000",
+            "status": "RUNNING",
+            "createdAt": "2024-01-01T00:00:00Z",
+            "progress": 0.5
+        })))
+        .expect(1..)
+        .mount(&mock_server)
+        .await;
+
+    let client = RunwayClient::with_config(test_config(&mock_server.uri())).unwrap();
+    let pending = client
+        .text_to_video()
+        .create(TextToVideoGen45Request::new(
+            "test",
+            VideoRatio::Landscape,
+            5,
+        ))
+        .await
+        .unwrap();
+
+    let updates = tokio::time::timeout(
+        Duration::from_secs(1),
+        pending
+            .stream_status_with_options(
+                WaitOptions::new()
+                    .poll_interval(Duration::from_millis(10))
+                    .timeout(Duration::from_millis(120)),
+            )
+            .collect::<Vec<_>>(),
+    )
+    .await
+    .expect("stream timeout should terminate status polling");
+
+    assert!(updates
+        .iter()
+        .any(|update| matches!(update, Ok(task) if task.status() == TaskStatus::Running)));
+    assert!(matches!(
+        updates.last(),
+        Some(Err(RunwayError::Timeout { .. }))
+    ));
+}
+
 // ── Multi-phase polling test ─────────────────────────────────────────────
 
 #[tokio::test]
@@ -1728,6 +1885,7 @@ async fn test_polling_timeout() {
             "createdAt": "2024-01-01T00:00:00Z",
             "progress": 0.1
         })))
+        .expect(1..)
         .mount(&mock_server)
         .await;
 
@@ -1737,7 +1895,7 @@ async fn test_polling_timeout() {
         .max_poll_duration(Duration::from_secs(10));
     let client = RunwayClient::with_config(config).unwrap();
 
-    let result = client
+    let pending = client
         .text_to_video()
         .create(TextToVideoGen45Request::new(
             "test",
@@ -1745,11 +1903,310 @@ async fn test_polling_timeout() {
             5,
         ))
         .await
-        .unwrap()
-        .wait_with_config(Duration::from_millis(50), Duration::from_millis(200))
-        .await;
+        .unwrap();
+
+    let result = tokio::time::timeout(
+        Duration::from_secs(1),
+        pending.wait_with_config(Duration::from_millis(50), Duration::from_millis(200)),
+    )
+    .await
+    .expect("the absolute polling deadline should bound the initial wait");
 
     assert!(matches!(result, Err(RunwayError::Timeout { .. })));
+}
+
+#[tokio::test]
+async fn test_polling_deadline_covers_in_flight_request() {
+    let mock_server = MockServer::start().await;
+
+    Mock::given(method("POST"))
+        .and(path("/v1/text_to_video"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "id": "895e8400-e29b-41d4-a716-446655440000"
+        })))
+        .expect(1)
+        .mount(&mock_server)
+        .await;
+
+    Mock::given(method("GET"))
+        .and(path("/v1/tasks/895e8400-e29b-41d4-a716-446655440000"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_delay(Duration::from_secs(2))
+                .set_body_json(serde_json::json!({
+                    "id": "895e8400-e29b-41d4-a716-446655440000",
+                    "status": "RUNNING",
+                    "createdAt": "2024-01-01T00:00:00Z",
+                    "progress": 0.1
+                })),
+        )
+        .expect(1)
+        .mount(&mock_server)
+        .await;
+
+    let client = RunwayClient::with_config(test_config(&mock_server.uri())).unwrap();
+    let pending = client
+        .text_to_video()
+        .create(TextToVideoGen45Request::new(
+            "test",
+            VideoRatio::Landscape,
+            5,
+        ))
+        .await
+        .unwrap();
+
+    let result = tokio::time::timeout(
+        Duration::from_secs(1),
+        pending.wait_with_config(Duration::from_millis(10), Duration::from_millis(150)),
+    )
+    .await
+    .expect("the polling deadline should cancel a slow status request");
+
+    assert!(matches!(result, Err(RunwayError::Timeout { .. })));
+}
+
+#[tokio::test]
+async fn test_polling_deadline_covers_retry_backoff() {
+    let mock_server = MockServer::start().await;
+
+    Mock::given(method("POST"))
+        .and(path("/v1/text_to_video"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "id": "895f8400-e29b-41d4-a716-446655440000"
+        })))
+        .expect(1)
+        .mount(&mock_server)
+        .await;
+
+    Mock::given(method("GET"))
+        .and(path("/v1/tasks/895f8400-e29b-41d4-a716-446655440000"))
+        .respond_with(ResponseTemplate::new(503).insert_header("retry-after", "5"))
+        .expect(1)
+        .mount(&mock_server)
+        .await;
+
+    let client = RunwayClient::with_config(test_config(&mock_server.uri())).unwrap();
+    let pending = client
+        .text_to_video()
+        .create(TextToVideoGen45Request::new(
+            "test",
+            VideoRatio::Landscape,
+            5,
+        ))
+        .await
+        .unwrap();
+
+    let result = tokio::time::timeout(
+        Duration::from_secs(1),
+        pending.wait_with_config(Duration::from_millis(10), Duration::from_millis(150)),
+    )
+    .await
+    .expect("the polling deadline should cancel an internal retry backoff");
+
+    assert!(matches!(result, Err(RunwayError::Timeout { .. })));
+}
+
+#[tokio::test]
+async fn test_polling_cancellation_aborts_in_flight_request() {
+    let mock_server = MockServer::start().await;
+
+    Mock::given(method("POST"))
+        .and(path("/v1/text_to_video"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "id": "896e8400-e29b-41d4-a716-446655440000"
+        })))
+        .expect(1)
+        .mount(&mock_server)
+        .await;
+
+    Mock::given(method("GET"))
+        .and(path("/v1/tasks/896e8400-e29b-41d4-a716-446655440000"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_delay(Duration::from_secs(2))
+                .set_body_json(serde_json::json!({
+                    "id": "896e8400-e29b-41d4-a716-446655440000",
+                    "status": "RUNNING",
+                    "createdAt": "2024-01-01T00:00:00Z",
+                    "progress": 0.1
+                })),
+        )
+        .expect(1)
+        .mount(&mock_server)
+        .await;
+
+    let client = RunwayClient::with_config(test_config(&mock_server.uri())).unwrap();
+    let pending = client
+        .text_to_video()
+        .create(TextToVideoGen45Request::new(
+            "test",
+            VideoRatio::Landscape,
+            5,
+        ))
+        .await
+        .unwrap();
+    let cancellation_token = CancellationToken::new();
+    let cancel = cancellation_token.clone();
+    tokio::spawn(async move {
+        tokio::time::sleep(Duration::from_millis(75)).await;
+        cancel.cancel();
+    });
+
+    let result = tokio::time::timeout(
+        Duration::from_secs(1),
+        pending.wait_with_options(
+            WaitOptions::new()
+                .poll_interval(Duration::from_millis(10))
+                .timeout(Duration::from_secs(5))
+                .cancellation_token(cancellation_token),
+        ),
+    )
+    .await
+    .expect("cancellation should interrupt a slow polling request");
+
+    assert!(matches!(result, Err(RunwayError::RequestAborted)));
+}
+
+#[tokio::test]
+async fn test_polling_cancellation_aborts_initial_wait() {
+    let mock_server = MockServer::start().await;
+
+    Mock::given(method("POST"))
+        .and(path("/v1/text_to_video"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "id": "897e8400-e29b-41d4-a716-446655440000"
+        })))
+        .expect(1)
+        .mount(&mock_server)
+        .await;
+
+    Mock::given(method("GET"))
+        .and(path("/v1/tasks/897e8400-e29b-41d4-a716-446655440000"))
+        .respond_with(ResponseTemplate::new(500))
+        .expect(0)
+        .mount(&mock_server)
+        .await;
+
+    let client = RunwayClient::with_config(test_config(&mock_server.uri())).unwrap();
+    let pending = client
+        .text_to_video()
+        .create(TextToVideoGen45Request::new(
+            "test",
+            VideoRatio::Landscape,
+            5,
+        ))
+        .await
+        .unwrap();
+    let cancellation_token = CancellationToken::new();
+    let cancel = cancellation_token.clone();
+    tokio::spawn(async move {
+        tokio::time::sleep(Duration::from_millis(25)).await;
+        cancel.cancel();
+    });
+
+    let result = tokio::time::timeout(
+        Duration::from_millis(500),
+        pending.wait_with_options(
+            WaitOptions::new()
+                .poll_interval(Duration::from_secs(1))
+                .timeout(Duration::from_secs(5))
+                .cancellation_token(cancellation_token),
+        ),
+    )
+    .await
+    .expect("cancellation should interrupt the initial polling wait");
+
+    assert!(matches!(result, Err(RunwayError::RequestAborted)));
+}
+
+#[tokio::test]
+async fn test_polling_rejects_zero_interval_before_network_io() {
+    let mock_server = MockServer::start().await;
+
+    Mock::given(method("POST"))
+        .and(path("/v1/text_to_video"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "id": "890e8400-e29b-41d4-a716-446655440000"
+        })))
+        .expect(1)
+        .mount(&mock_server)
+        .await;
+
+    Mock::given(method("GET"))
+        .and(path("/v1/tasks/890e8400-e29b-41d4-a716-446655440000"))
+        .respond_with(ResponseTemplate::new(500))
+        .expect(0)
+        .mount(&mock_server)
+        .await;
+
+    let client = RunwayClient::with_config(test_config(&mock_server.uri())).unwrap();
+    let pending = client
+        .text_to_video()
+        .create(TextToVideoGen45Request::new(
+            "test",
+            VideoRatio::Landscape,
+            5,
+        ))
+        .await
+        .unwrap();
+
+    let result = tokio::time::timeout(
+        Duration::from_millis(100),
+        pending.wait_with_config(Duration::ZERO, Duration::from_secs(1)),
+    )
+    .await
+    .expect("zero poll intervals should be rejected synchronously");
+
+    assert!(matches!(
+        result,
+        Err(RunwayError::Validation { message })
+            if message == "Poll interval must be greater than zero"
+    ));
+}
+
+#[tokio::test]
+async fn test_polling_rejects_zero_timeout_before_network_io() {
+    let mock_server = MockServer::start().await;
+
+    Mock::given(method("POST"))
+        .and(path("/v1/text_to_video"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "id": "8a0e8400-e29b-41d4-a716-446655440000"
+        })))
+        .expect(1)
+        .mount(&mock_server)
+        .await;
+
+    Mock::given(method("GET"))
+        .and(path("/v1/tasks/8a0e8400-e29b-41d4-a716-446655440000"))
+        .respond_with(ResponseTemplate::new(500))
+        .expect(0)
+        .mount(&mock_server)
+        .await;
+
+    let client = RunwayClient::with_config(test_config(&mock_server.uri())).unwrap();
+    let pending = client
+        .text_to_video()
+        .create(TextToVideoGen45Request::new(
+            "test",
+            VideoRatio::Landscape,
+            5,
+        ))
+        .await
+        .unwrap();
+
+    let result = tokio::time::timeout(
+        Duration::from_millis(100),
+        pending.wait_with_config(Duration::from_millis(10), Duration::ZERO),
+    )
+    .await
+    .expect("zero polling timeouts should be rejected synchronously");
+
+    assert!(matches!(
+        result,
+        Err(RunwayError::Validation { message })
+            if message == "Polling timeout must be greater than zero"
+    ));
 }
 
 // ── 5xx retry tests ─────────────────────────────────────────────────────
@@ -1796,7 +2253,11 @@ async fn test_server_error_503_retry() {
 
     Mock::given(method("POST"))
         .and(path("/v1/text_to_video"))
-        .respond_with(ResponseTemplate::new(503).set_body_string("Service Unavailable"))
+        .respond_with(
+            ResponseTemplate::new(503)
+                .insert_header("retry-after-ms", "1")
+                .set_body_string("Service Unavailable"),
+        )
         .up_to_n_times(1)
         .expect(1)
         .mount(&mock_server)
@@ -1816,13 +2277,13 @@ async fn test_server_error_503_retry() {
 
     let pending = client
         .text_to_video()
-        .create(TextToVideoGen45Request::new(
-            "test",
-            VideoRatio::Landscape,
-            5,
-        ))
+        .create_with_options(
+            TextToVideoGen45Request::new("test", VideoRatio::Landscape, 5),
+            RequestOptions::new().idempotency_key("server-error-retry"),
+        )
         .await
-        .unwrap();
+        .unwrap()
+        .data;
     assert_eq!(
         pending.id().to_string(),
         "550e8400-e29b-41d4-a716-446655440001"
@@ -1837,7 +2298,7 @@ async fn test_server_error_504_exhausted() {
     Mock::given(method("GET"))
         .and(path("/v1/tasks/550e8400-e29b-41d4-a716-446655440002"))
         .respond_with(ResponseTemplate::new(504).set_body_string("Gateway Timeout"))
-        .expect(4) // 1 initial + 3 retries
+        .expect(3) // 1 initial + 2 retries
         .mount(&mock_server)
         .await;
 
@@ -1853,14 +2314,14 @@ async fn test_server_error_504_exhausted() {
 }
 
 #[tokio::test]
-async fn test_server_error_500_not_retried() {
+async fn test_server_error_500_retries_safe_get() {
     let mock_server = MockServer::start().await;
 
     // 500 Internal Server Error is retryable under the production transport policy.
     Mock::given(method("GET"))
         .and(path("/v1/tasks/550e8400-e29b-41d4-a716-446655440003"))
         .respond_with(ResponseTemplate::new(500).set_body_string("Internal Server Error"))
-        .expect(4)
+        .expect(3)
         .mount(&mock_server)
         .await;
 
@@ -2287,7 +2748,7 @@ async fn test_voice_preview() {
     Mock::given(method("POST"))
         .and(path("/v1/voices/preview"))
         .and(body_json(serde_json::json!({
-            "model": "eleven_multilingual_ttv_v2",
+            "model": "eleven_ttv_v3",
             "prompt": "Warm and expressive voice for product demos"
         })))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({

@@ -8,12 +8,12 @@ use crate::error::RunwayError;
 pub const DEFAULT_BASE_URL: &str = "https://api.dev.runwayml.com";
 /// Default API version header value.
 pub const DEFAULT_API_VERSION: &str = "2024-11-06";
-/// Default HTTP request timeout (300s / 5 minutes — video generation is slow).
-pub const DEFAULT_TIMEOUT: Duration = Duration::from_secs(300);
-/// Default maximum retry attempts for rate-limited requests.
-pub const DEFAULT_MAX_RETRIES: u32 = 3;
-/// Default interval between task status polls (Runway recommends >= 5s).
-pub const DEFAULT_POLL_INTERVAL: Duration = Duration::from_secs(5);
+/// Default HTTP request timeout (60 seconds), matching the official SDKs.
+pub const DEFAULT_TIMEOUT: Duration = Duration::from_secs(60);
+/// Default maximum retry attempts, matching the official SDKs.
+pub const DEFAULT_MAX_RETRIES: u32 = 2;
+/// Default interval between task status polls, matching the official SDKs.
+pub const DEFAULT_POLL_INTERVAL: Duration = Duration::from_secs(6);
 /// Default maximum duration to poll before timing out (600s / 10 minutes).
 pub const DEFAULT_MAX_POLL_DURATION: Duration = Duration::from_secs(600);
 
@@ -32,7 +32,7 @@ pub const DEFAULT_MAX_POLL_DURATION: Duration = Duration::from_secs(600);
 #[derive(Clone)]
 pub struct Config {
     /// Bearer token used to authenticate with the Runway API.
-    pub api_key: String,
+    pub(crate) api_key: String,
     /// Base URL for API requests.
     pub base_url: String,
     /// Value sent in the `X-Runway-Version` header.
@@ -41,6 +41,8 @@ pub struct Config {
     pub timeout: Duration,
     /// Maximum number of retry attempts for retryable requests.
     pub max_retries: u32,
+    /// Whether mutation requests without an idempotency key may be retried.
+    pub retry_non_idempotent: bool,
     /// Delay between polls when waiting on tasks or workflow invocations.
     pub poll_interval: Duration,
     /// Maximum time to wait when polling for a terminal result.
@@ -60,6 +62,7 @@ impl Config {
             api_version: DEFAULT_API_VERSION.to_string(),
             timeout: DEFAULT_TIMEOUT,
             max_retries: DEFAULT_MAX_RETRIES,
+            retry_non_idempotent: false,
             poll_interval: DEFAULT_POLL_INTERVAL,
             max_poll_duration: DEFAULT_MAX_POLL_DURATION,
             default_headers: HeaderMap::new(),
@@ -91,6 +94,15 @@ impl Config {
         self
     }
 
+    /// Allow automatic retries for mutation requests that have no idempotency key.
+    ///
+    /// This is disabled by default because retrying a billable request after an
+    /// ambiguous transport failure can create duplicate tasks.
+    pub fn retry_non_idempotent(mut self, enabled: bool) -> Self {
+        self.retry_non_idempotent = enabled;
+        self
+    }
+
     /// Override the default poll interval for pending tasks and workflows.
     pub fn poll_interval(mut self, interval: Duration) -> Self {
         self.poll_interval = interval;
@@ -112,6 +124,11 @@ impl Config {
         let name = HeaderName::try_from(name.as_ref()).map_err(|_| RunwayError::Validation {
             message: format!("Invalid header name: {}", name.as_ref()),
         })?;
+        if name == "idempotency-key" {
+            return Err(RunwayError::Validation {
+                message: "Idempotency-Key cannot be a client default; set a unique key on each request with RequestOptions::idempotency_key".into(),
+            });
+        }
         let value = HeaderValue::from_str(value.as_ref()).map_err(|_| RunwayError::Validation {
             message: format!("Invalid header value for {}", name.as_str()),
         })?;
@@ -124,20 +141,31 @@ impl Config {
         self.default_query.push((key.into(), value.into()));
         self
     }
+
+    pub(crate) fn api_key(&self) -> &str {
+        &self.api_key
+    }
 }
 
 impl std::fmt::Debug for Config {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Config")
             .field("api_key", &"[REDACTED]")
-            .field("base_url", &self.base_url)
+            .field("base_url", &crate::client::RedactedUrl(&self.base_url))
             .field("api_version", &self.api_version)
             .field("timeout", &self.timeout)
             .field("max_retries", &self.max_retries)
+            .field("retry_non_idempotent", &self.retry_non_idempotent)
             .field("poll_interval", &self.poll_interval)
             .field("max_poll_duration", &self.max_poll_duration)
-            .field("default_headers", &self.default_headers)
-            .field("default_query", &self.default_query)
+            .field(
+                "default_headers",
+                &crate::client::RedactedHeaders(&self.default_headers),
+            )
+            .field(
+                "default_query",
+                &crate::client::RedactedQuery(&self.default_query),
+            )
             .finish()
     }
 }

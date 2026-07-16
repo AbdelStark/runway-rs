@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Runway API documentation
+    url: https://docs.dev.runwayml.com/
+    about: Check the official API contract before reporting SDK behavior.
+  - name: Runway product and account support
+    url: https://help.runwayml.com/hc/en-us
+    about: Contact Runway for hosted-service, account, billing, or abuse issues.
+  - name: Private security report
+    url: https://github.com/AbdelStark/runway-rs/security/advisories/new
+    about: Report suspected SDK vulnerabilities privately; do not open a public issue.

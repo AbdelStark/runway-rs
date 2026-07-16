@@ -1,6 +1,80 @@
 use reqwest::header::HeaderMap;
+use std::fmt;
+use std::ops::Deref;
 use std::time::Duration;
 use uuid::Uuid;
+
+/// HTTP response headers retained on API errors.
+///
+/// Header values remain available through [`Deref`], while [`Debug`] redacts
+/// every value so diagnostic logging cannot disclose cookies or opaque tokens.
+#[derive(Clone, Default)]
+pub struct ErrorResponseHeaders(HeaderMap);
+
+impl ErrorResponseHeaders {
+    /// Borrow the underlying response header map.
+    pub fn as_header_map(&self) -> &HeaderMap {
+        &self.0
+    }
+
+    /// Consume the wrapper and return the underlying response header map.
+    pub fn into_header_map(self) -> HeaderMap {
+        self.0
+    }
+}
+
+impl From<HeaderMap> for ErrorResponseHeaders {
+    fn from(headers: HeaderMap) -> Self {
+        Self(headers)
+    }
+}
+
+impl AsRef<HeaderMap> for ErrorResponseHeaders {
+    fn as_ref(&self) -> &HeaderMap {
+        &self.0
+    }
+}
+
+impl Deref for ErrorResponseHeaders {
+    type Target = HeaderMap;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl fmt::Debug for ErrorResponseHeaders {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut map = f.debug_map();
+        for name in self.0.keys() {
+            map.entry(&name.as_str(), &"[REDACTED]");
+        }
+        map.finish()
+    }
+}
+
+/// A bounded response-body excerpt retained for decode diagnostics.
+///
+/// Its [`Debug`](std::fmt::Debug) implementation is deliberately redacted so
+/// logs cannot accidentally disclose generated content or signed asset URLs.
+pub struct ResponseBodyExcerpt(String);
+
+impl ResponseBodyExcerpt {
+    pub(crate) fn new(value: String) -> Self {
+        Self(value)
+    }
+
+    /// Borrow the excerpt for an explicit, deliberate diagnostic action.
+    pub fn expose(&self) -> &str {
+        &self.0
+    }
+}
+
+impl std::fmt::Debug for ResponseBodyExcerpt {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("[REDACTED RESPONSE BODY]")
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[non_exhaustive]
@@ -38,7 +112,7 @@ pub enum RunwayError {
         kind: ApiErrorKind,
         message: String,
         code: Option<String>,
-        headers: Box<HeaderMap>,
+        headers: Box<ErrorResponseHeaders>,
     },
 
     #[error("Task failed: {message} (code: {code})")]
@@ -60,7 +134,7 @@ pub enum RunwayError {
         retry_after: Option<Duration>,
         message: String,
         code: Option<String>,
-        headers: Box<HeaderMap>,
+        headers: Box<ErrorResponseHeaders>,
     },
 
     #[error("Task polling timed out after {elapsed:?}")]
@@ -72,26 +146,52 @@ pub enum RunwayError {
         elapsed: Duration,
     },
 
-    #[error("Authentication failed — check RUNWAYML_API_SECRET")]
-    Unauthorized,
+    #[error("Authentication failed: {message}")]
+    Unauthorized {
+        message: String,
+        code: Option<String>,
+        headers: Box<ErrorResponseHeaders>,
+    },
 
     #[error("Invalid input: {message}")]
     Validation { message: String },
 
-    #[error("Connection error: {message}")]
-    ConnectionError { message: String },
+    #[error("Connection error: {source}")]
+    ConnectionError {
+        #[source]
+        source: reqwest::Error,
+    },
 
-    #[error("Connection timed out")]
-    ConnectionTimeout,
+    #[error("Connection timed out: {source}")]
+    ConnectionTimeout {
+        #[source]
+        source: reqwest::Error,
+    },
 
     #[error("Request was aborted")]
     RequestAborted,
 
     #[error("HTTP error: {0}")]
-    Http(#[from] reqwest::Error),
+    Http(reqwest::Error),
 
     #[error("JSON error: {0}")]
     Json(#[from] serde_json::Error),
+
+    #[error("Could not decode API response (HTTP {status}): {message}")]
+    ResponseDecode {
+        status: u16,
+        message: String,
+        body_excerpt: ResponseBodyExcerpt,
+        #[source]
+        source: serde_json::Error,
+    },
+
+    #[error("API response body exceeded the {limit_bytes}-byte safety limit (HTTP {status})")]
+    ResponseTooLarge {
+        status: u16,
+        limit_bytes: usize,
+        content_length: Option<u64>,
+    },
 
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
@@ -100,13 +200,25 @@ pub enum RunwayError {
     MissingApiKey,
 }
 
+impl From<reqwest::Error> for RunwayError {
+    fn from(error: reqwest::Error) -> Self {
+        // Reqwest errors retain their request URL. Strip it before the error can
+        // reach Debug/Display because URLs may contain signed storage credentials
+        // or caller-supplied secret query parameters.
+        Self::Http(error.without_url())
+    }
+}
+
 impl RunwayError {
     /// Return the HTTP status code when one is available.
     pub fn status(&self) -> Option<u16> {
         match self {
             Self::Api { status, .. } => Some(*status),
             Self::RateLimited { .. } => Some(429),
-            Self::Unauthorized => Some(401),
+            Self::Unauthorized { .. } => Some(401),
+            Self::ResponseDecode { status, .. } | Self::ResponseTooLarge { status, .. } => {
+                Some(*status)
+            }
             _ => None,
         }
     }
@@ -114,8 +226,10 @@ impl RunwayError {
     /// Return the response headers for API-derived errors.
     pub fn headers(&self) -> Option<&HeaderMap> {
         match self {
-            Self::Api { headers, .. } => Some(headers.as_ref()),
-            Self::RateLimited { headers, .. } => Some(headers.as_ref()),
+            Self::Api { headers, .. } | Self::Unauthorized { headers, .. } => {
+                Some(headers.as_header_map())
+            }
+            Self::RateLimited { headers, .. } => Some(headers.as_header_map()),
             _ => None,
         }
     }
@@ -125,7 +239,7 @@ impl RunwayError {
         match self {
             Self::Api { kind, .. } => Some(*kind),
             Self::RateLimited { .. } => Some(ApiErrorKind::RateLimited),
-            Self::Unauthorized => Some(ApiErrorKind::Authentication),
+            Self::Unauthorized { .. } => Some(ApiErrorKind::Authentication),
             _ => None,
         }
     }

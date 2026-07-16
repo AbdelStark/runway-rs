@@ -1,0 +1,72 @@
+name: Bug report
+description: Report reproducible incorrect behavior in the Rust SDK.
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report. Remove API keys, customer content, and personal data from all examples and logs.
+  - type: input
+    id: version
+    attributes:
+      label: SDK version
+      description: The `runway-sdk` version or Git commit that shows the problem.
+      placeholder: 0.2.0
+    validations:
+      required: true
+  - type: input
+    id: rust
+    attributes:
+      label: Rust version
+      description: Output from `rustc --version`.
+      placeholder: rustc 1.89.0
+    validations:
+      required: true
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Operating system
+      options:
+        - Linux
+        - macOS
+        - Windows
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Minimal reproduction
+      description: Provide a small, self-contained example and the exact command used.
+      render: rust
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: Include sanitized errors or logs if useful.
+    validations:
+      required: true
+  - type: textarea
+    id: contract
+    attributes:
+      label: Upstream contract evidence
+      description: Link relevant official Runway API documentation, if applicable.
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Safety check
+      options:
+        - label: I removed API keys, customer content, and personal data from this report.
+          required: true
+        - label: I searched existing issues for the same problem.
+          required: true
