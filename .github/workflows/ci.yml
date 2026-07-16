@@ -32,8 +32,9 @@ jobs:
         with:
           globs: "**/*.md"
       - name: Install stable Rust
-        uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
+        uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # pinned action implementation
         with:
+          toolchain: stable
           components: clippy,rustfmt
       - name: Restore Rust cache
         uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
@@ -60,7 +61,9 @@ jobs:
         with:
           persist-credentials: false
       - name: Install stable Rust
-        uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
+        uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # pinned action implementation
+        with:
+          toolchain: stable
       - name: Restore Rust cache
         uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
       - name: Run tests
@@ -76,7 +79,9 @@ jobs:
         with:
           persist-credentials: false
       - name: Install Rust 1.89
-        uses: dtolnay/rust-toolchain@c1709d61444fb708e6ed87924f95626398d8d115 # 1.89.0
+        uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # pinned action implementation
+        with:
+          toolchain: 1.89.0
       - name: Restore Rust cache
         uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
@@ -99,7 +104,9 @@ jobs:
         with:
           persist-credentials: false
       - name: Install nightly Rust
-        uses: dtolnay/rust-toolchain@efcb852328a9f50117170cc43094fb6f09eaf1ae # nightly
+        uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # pinned action implementation
+        with:
+          toolchain: nightly
       - name: Restore Rust cache
         uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
@@ -117,7 +124,9 @@ jobs:
         with:
           persist-credentials: false
       - name: Install stable Rust
-        uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
+        uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # pinned action implementation
+        with:
+          toolchain: stable
       - name: Restore Rust cache
         uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
@@ -145,7 +154,9 @@ jobs:
         with:
           persist-credentials: false
       - name: Install stable Rust
-        uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
+        uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # pinned action implementation
+        with:
+          toolchain: stable
       - name: Restore Rust cache
         uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:

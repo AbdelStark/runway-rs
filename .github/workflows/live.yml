@@ -25,7 +25,9 @@ jobs:
         with:
           persist-credentials: false
       - name: Install stable Rust
-        uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
+        uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # pinned action implementation
+        with:
+          toolchain: stable
       - name: Restore Rust cache
         uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
       - name: Require the live API credential
