@@ -122,7 +122,7 @@ jobs:
       - name: Verify package
         run: cargo package --locked
       - name: Install nightly Rust for docs.rs validation
-        uses: dtolnay/rust-toolchain@efcb852328a9f50117170cc43094fb6f09eaf1ae # nightly
+        uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # nightly
       - name: Build documentation like docs.rs
         env:
           DOCS_RS: "1"
